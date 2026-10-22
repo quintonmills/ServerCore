@@ -10,6 +10,8 @@ Express API for saving finalized ScoreKings basketball games in MongoDB and rend
 
 ## Install and configure
 
+For a production deployment using Docker and MongoDB Atlas, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+
 ```sh
 npm install
 cp .env.example .env

@@ -209,6 +209,25 @@ test('health endpoint is available without a database', async () => {
   });
 });
 
+test('CORS allows each configured frontend origin and omits headers for other origins', async () => {
+  const app = createApp({
+    corsOrigin: 'https://scorekings.example.com, https://admin.example.com',
+  });
+  await withServer(app, async (baseUrl) => {
+    for (const origin of ['https://scorekings.example.com', 'https://admin.example.com']) {
+      const response = await fetch(`${baseUrl}/api/health`, {
+        headers: { Origin: origin },
+      });
+      assert.equal(response.headers.get('access-control-allow-origin'), origin);
+    }
+
+    const disallowedResponse = await fetch(`${baseUrl}/api/health`, {
+      headers: { Origin: 'https://untrusted.example.com' },
+    });
+    assert.equal(disallowedResponse.headers.get('access-control-allow-origin'), null);
+  });
+});
+
 test('malformed JSON returns a 400 JSON error envelope', async () => {
   const app = createApp();
   await withServer(app, async (baseUrl) => {
