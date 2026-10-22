@@ -9,8 +9,9 @@ import { createApp } from '../src/app.js';
 const payload = {
   gameId: 'game-101',
   location: 'Marietta Rec League',
-  teamA: { name: 'Red Team', score: 24 },
+  teamA: { name: 'Red Team', score: 24, logo: 'data:image/png;base64,aGVsbG8=' },
   teamB: { name: 'Blue Team', score: 18 },
+  imageGeneration: { prompt: 'arena spotlight', quality: 'medium' },
   players: [
     {
       id: 'p1',
@@ -23,6 +24,7 @@ const payload = {
       stl: 1,
       blk: 0,
       to: 2,
+      photo: 'data:image/png;base64,aGVsbG8=',
     },
   ],
 };
@@ -53,8 +55,10 @@ test('finalize persists the supplied game ID and returns generated graphics', as
   const app = createApp({
     GameModel,
     publicBaseUrl: 'http://localhost:5000',
-    graphicGenerator: async (player) => {
+    graphicGenerator: async (player, game, options) => {
       renderCalls += 1;
+      assert.equal(options.playerImage, payload.players[0].photo);
+      assert.equal(options.teamLogoImage, payload.teamA.logo);
       return { filePath: '/tmp/test-card.jpg', publicUrl: `/output/${player.id}.jpg` };
     },
   });
@@ -72,6 +76,14 @@ test('finalize persists the supplied game ID and returns generated graphics', as
     assert.equal(body.graphics[0].playerId, 'p1');
     assert.equal(body.graphics[0].publicUrl, '/output/p1.jpg');
     assert.equal(savedPayload.gameId, 'game-101');
+    assert.equal(savedPayload.players[0].photo, payload.players[0].photo);
+    assert.equal(savedPayload.teamA.logo, payload.teamA.logo);
+    assert.deepEqual(savedPayload.imageGeneration, {
+      ...payload.imageGeneration,
+      size: '1024x1536',
+    });
+    assert.equal(body.game.players[0].photo, undefined);
+    assert.equal(body.game.teamA.logo, undefined);
     assert.equal(renderCalls, 1);
   });
 });
@@ -100,6 +112,38 @@ test('invalid payload returns a consistent 400 response without persistence', as
     assert.equal(response.status, 400);
     assert.equal(body.error.code, 'VALIDATION_ERROR');
     assert.ok(body.error.details.some((detail) => detail.includes('gameId')));
+    assert.equal(saveCalls, 0);
+  });
+});
+
+test('selected players must include a photo and their team must include a logo', async () => {
+  let saveCalls = 0;
+  const incompletePayload = structuredClone(payload);
+  delete incompletePayload.players[0].photo;
+  delete incompletePayload.teamA.logo;
+  const app = createApp({
+    GameModel: {
+      async findOneAndUpdate() {
+        saveCalls += 1;
+      },
+    },
+    graphicGenerator: async () => {
+      throw new Error('Renderer must not be called');
+    },
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/games/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(incompletePayload),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.equal(body.error.code, 'VALIDATION_ERROR');
+    assert.ok(body.error.details.some((detail) => detail.includes('.photo is required')));
+    assert.ok(body.error.details.some((detail) => detail.includes('teamA.logo is required')));
     assert.equal(saveCalls, 0);
   });
 });

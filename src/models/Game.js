@@ -1,9 +1,19 @@
 import mongoose from 'mongoose';
 
+const imageGenerationSchema = new mongoose.Schema(
+  {
+    prompt: { type: String, maxlength: 1000 },
+    size: { type: String, enum: ['1024x1024', '1024x1536', '1536x1024', 'auto'] },
+    quality: { type: String, enum: ['low', 'medium', 'high', 'auto'] },
+  },
+  { _id: false },
+);
+
 const teamSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, maxlength: 200 },
     score: { type: Number, required: true, min: 0 },
+    logo: { type: String, maxlength: 7 * 1024 * 1024 },
   },
   { _id: false },
 );
@@ -20,6 +30,7 @@ const playerSchema = new mongoose.Schema(
     stl: { type: Number, required: true, min: 0 },
     blk: { type: Number, required: true, min: 0 },
     to: { type: Number, required: true, min: 0 },
+    photo: { type: String, maxlength: 7 * 1024 * 1024 },
   },
   { _id: false },
 );
@@ -31,6 +42,7 @@ const gameSchema = new mongoose.Schema(
     teamA: { type: teamSchema, required: true },
     teamB: { type: teamSchema, required: true },
     players: { type: [playerSchema], required: true },
+    imageGeneration: { type: imageGenerationSchema },
   },
   { timestamps: true, versionKey: false },
 );

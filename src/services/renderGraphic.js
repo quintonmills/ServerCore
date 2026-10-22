@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createCanvas } from '@napi-rs/canvas';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { generatePlayerPortrait } from './openAiImageGenerator.js';
 
 const outputDirectory = fileURLToPath(new URL('../../output/', import.meta.url));
 const width = 1080;
@@ -32,7 +33,32 @@ function fitText(context, text, maxWidth, initialSize, minimumSize = 28) {
   return { size, text: fittedText };
 }
 
-function drawStatCard(playerData, gameData) {
+function drawImageCover(context, image, x, y, targetWidth, targetHeight) {
+  const scale = Math.max(targetWidth / image.width, targetHeight / image.height);
+  const sourceWidth = targetWidth / scale;
+  const sourceHeight = targetHeight / scale;
+  const sourceX = (image.width - sourceWidth) / 2;
+  const sourceY = (image.height - sourceHeight) / 2;
+
+  context.save();
+  context.beginPath();
+  context.roundRect(x, y, targetWidth, targetHeight, 24);
+  context.clip();
+  context.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    x,
+    y,
+    targetWidth,
+    targetHeight,
+  );
+  context.restore();
+}
+
+async function drawStatCard(playerData, gameData, portraitBuffer, teamLogoBuffer) {
   const canvas = createCanvas(width, height);
   const context = canvas.getContext('2d');
   const background = context.createLinearGradient(0, 0, width, height);
@@ -56,9 +82,12 @@ function drawStatCard(playerData, gameData) {
   context.lineTo(1008, 198);
   context.stroke();
 
+  const portrait = await loadImage(portraitBuffer);
+  drawImageCover(context, portrait, 560, 218, 448, 382);
+
   const playerName = playerData.name || 'Player';
   context.fillStyle = '#f7f9fc';
-  const fittedName = fitText(context, playerName, 900, 84, 42);
+  const fittedName = fitText(context, playerName, 440, 84, 42);
   context.font = `700 ${fittedName.size}px Arial`;
   context.fillText(fittedName.text, 72, 326);
 
@@ -67,11 +96,29 @@ function drawStatCard(playerData, gameData) {
   context.fillText(`JERSEY  ${playerData.jersey || '—'}`, 76, 389);
   context.fillStyle = '#c6cedb';
   context.font = '500 28px Arial';
-  context.fillText(playerData.team || 'Team not available', 76, 438);
+  const fittedTeam = fitText(context, playerData.team || 'Team not available', 340, 28, 20);
+  context.font = `500 ${fittedTeam.size}px Arial`;
+  context.fillText(fittedTeam.text, 76, 438);
+
+  const teamLogo = await loadImage(teamLogoBuffer);
+  context.fillStyle = '#171f2d';
+  context.beginPath();
+  context.roundRect(432, 382, 72, 72, 12);
+  context.fill();
+  const logoScale = Math.min(56 / teamLogo.width, 56 / teamLogo.height);
+  const logoWidth = teamLogo.width * logoScale;
+  const logoHeight = teamLogo.height * logoScale;
+  context.drawImage(
+    teamLogo,
+    440 + (56 - logoWidth) / 2,
+    390 + (56 - logoHeight) / 2,
+    logoWidth,
+    logoHeight,
+  );
 
   const location = gameData.location || 'Location not available';
   context.fillStyle = '#8f9bad';
-  const fittedLocation = fitText(context, location, 900, 25, 20);
+  const fittedLocation = fitText(context, location, 440, 25, 20);
   context.font = `500 ${fittedLocation.size}px Arial`;
   context.fillText(fittedLocation.text, 76, 510);
 
@@ -123,14 +170,37 @@ function drawStatCard(playerData, gameData) {
   return canvas;
 }
 
-export async function generateStatCard(playerData, gameData, { publicBaseUrl } = {}) {
+export async function generateStatCard(
+  playerData,
+  gameData,
+  {
+    publicBaseUrl,
+    playerImage,
+    teamLogoImage,
+    imageGeneration,
+    imageGenerator = generatePlayerPortrait,
+  } = {},
+) {
+  if (!playerImage || !teamLogoImage) {
+    throw new Error('A player photo and the player team logo are required to generate a flyer');
+  }
+
   await mkdir(outputDirectory, { recursive: true });
 
+  const portraitBuffer = await imageGenerator({
+    player: playerData,
+    game: gameData,
+    playerImage,
+    teamLogoImage,
+    imageGeneration,
+  });
+  const teamLogoBuffer = Buffer.from(teamLogoImage.split(',')[1], 'base64');
   const filename = `${safeFilenamePart(gameData.gameId)}-${safeFilenamePart(
     playerData.id,
   )}-${randomUUID()}.jpg`;
   const filePath = path.join(outputDirectory, filename);
-  const image = await drawStatCard(playerData, gameData).encode('jpeg', 92);
+  const card = await drawStatCard(playerData, gameData, portraitBuffer, teamLogoBuffer);
+  const image = await card.encode('jpeg', 92);
   await writeFile(filePath, image, { flag: 'wx' });
 
   const baseUrl = publicBaseUrl?.replace(/\/+$/, '');

@@ -6,6 +6,21 @@ function isDuplicateKeyError(error) {
   return error?.code === 11000;
 }
 
+function omitStoredImages(game) {
+  const safeGame = typeof game.toObject === 'function'
+    ? game.toObject()
+    : {
+        ...game,
+        teamA: { ...game.teamA },
+        teamB: { ...game.teamB },
+        players: game.players.map((player) => ({ ...player })),
+      };
+  delete safeGame.teamA.logo;
+  delete safeGame.teamB.logo;
+  safeGame.players.forEach((player) => delete player.photo);
+  return safeGame;
+}
+
 async function saveFinalizedGame(GameModel, payload) {
   try {
     return await GameModel.findOneAndUpdate(
@@ -38,13 +53,51 @@ export function createGameController({ GameModel, generateStatCard, publicBaseUr
       return;
     }
 
+    const players = selectPlayersForCards(request.body.players);
+    const playerInputs = new Map(request.body.players.map((player) => [player.id, player]));
+    const assetErrors = [];
+    for (const player of players) {
+      const input = playerInputs.get(player.id);
+      const team = player.team === 'Team A' ? request.body.teamA : request.body.teamB;
+      if (!input.photo) assetErrors.push(`players[id=${player.id}].photo is required to generate a flyer`);
+      if (!team.logo) {
+        assetErrors.push(
+          `${player.team === 'Team A' ? 'teamA' : 'teamB'}.logo is required to generate this player's flyer`,
+        );
+      }
+    }
+    if (assetErrors.length > 0) {
+      response.status(400).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Player photos and team logos are required for flyer generation',
+          details: assetErrors,
+        },
+      });
+      return;
+    }
+
+    const suppliedImageGeneration = request.body.imageGeneration || {};
+    const imageGeneration = {
+      ...suppliedImageGeneration,
+      size: suppliedImageGeneration.size || '1024x1536',
+      quality: suppliedImageGeneration.quality || 'high',
+    };
+    const gamePayload = { ...request.body, imageGeneration };
+
     const generated = [];
     try {
-      const game = await saveFinalizedGame(GameModel, request.body);
-      const players = selectPlayersForCards(game.players);
+      const game = await saveFinalizedGame(GameModel, gamePayload);
 
       for (const player of players) {
-        const graphic = await generateStatCard(player, game, { publicBaseUrl });
+        const input = playerInputs.get(player.id);
+        const team = player.team === 'Team A' ? request.body.teamA : request.body.teamB;
+        const graphic = await generateStatCard(player, game, {
+          publicBaseUrl,
+          playerImage: input.photo,
+          teamLogoImage: team.logo,
+          imageGeneration,
+        });
         generated.push({
           playerId: player.id,
           playerName: player.name,
@@ -52,7 +105,7 @@ export function createGameController({ GameModel, generateStatCard, publicBaseUr
         });
       }
 
-      response.status(200).json({ game, graphics: generated });
+      response.status(200).json({ game: omitStoredImages(game), graphics: generated });
     } catch (error) {
       const cleanupResults = await Promise.allSettled(
         generated.map((graphic) => unlink(graphic.filePath)),

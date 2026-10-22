@@ -2,10 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { unlink } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { loadImage } from '@napi-rs/canvas';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { generateStatCard } from '../src/services/renderGraphic.js';
 
 test('renders a 1080 by 1350 JPEG with a safe file path and public URL', async () => {
+  const referenceImage = createCanvas(64, 64);
+  referenceImage.getContext('2d').fillRect(0, 0, 64, 64);
+  const referenceDataUrl = `data:image/png;base64,${(await referenceImage.encode('png')).toString('base64')}`;
   const graphic = await generateStatCard(
     {
       id: '../p1',
@@ -22,7 +25,12 @@ test('renders a 1080 by 1350 JPEG with a safe file path and public URL', async (
       teamA: { name: 'Red Team', score: 24 },
       teamB: { name: 'Blue Team', score: 18 },
     },
-    { publicBaseUrl: 'http://localhost:5000/' },
+    {
+      publicBaseUrl: 'http://localhost:5000/',
+      playerImage: referenceDataUrl,
+      teamLogoImage: referenceDataUrl,
+      imageGenerator: async () => referenceImage.encode('png'),
+    },
   );
 
   try {

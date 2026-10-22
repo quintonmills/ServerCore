@@ -48,3 +48,17 @@ test('rejects duplicate player IDs and non-object request bodies', () => {
   assert.ok(validateGamePayload(payload).some((error) => error.includes('must be unique')));
   assert.deepEqual(validateGamePayload(null), ['Request body must be a JSON object']);
 });
+
+test('validates uploaded image data URLs and image-generation options', () => {
+  const payload = structuredClone(validPayload);
+  payload.players[0].photo = 'https://example.com/player.png';
+  payload.teamA.logo = 'data:image/gif;base64,aGVsbG8=';
+  payload.imageGeneration = { size: '500x500', quality: 'ultra', extra: true };
+
+  const errors = validateGamePayload(payload);
+  assert.ok(errors.some((error) => error.includes('players[0].photo')));
+  assert.ok(errors.some((error) => error.includes('teamA.logo')));
+  assert.ok(errors.some((error) => error.includes('imageGeneration.size')));
+  assert.ok(errors.some((error) => error.includes('imageGeneration.quality')));
+  assert.ok(errors.some((error) => error.includes('imageGeneration.extra')));
+});

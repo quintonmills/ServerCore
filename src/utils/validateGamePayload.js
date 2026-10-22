@@ -1,5 +1,12 @@
-const rootFields = new Set(['gameId', 'location', 'teamA', 'teamB', 'players']);
-const teamFields = new Set(['name', 'score']);
+const rootFields = new Set([
+  'gameId',
+  'location',
+  'teamA',
+  'teamB',
+  'players',
+  'imageGeneration',
+]);
+const teamFields = new Set(['name', 'score', 'logo']);
 const playerFields = new Set([
   'id',
   'team',
@@ -11,7 +18,14 @@ const playerFields = new Set([
   'stl',
   'blk',
   'to',
+  'photo',
 ]);
+const generationFields = new Set(['prompt', 'size', 'quality']);
+const imageDataUrlPattern = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
+const maxImageBytes = 5 * 1024 * 1024;
+const maxGameDocumentBytes = 14 * 1024 * 1024;
+const imageSizes = new Set(['1024x1024', '1024x1536', '1536x1024', 'auto']);
+const imageQualities = new Set(['low', 'medium', 'high', 'auto']);
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -39,6 +53,26 @@ function checkNumber(value, path, errors) {
   }
 }
 
+function checkImageDataUrl(value, path, errors) {
+  if (value === undefined) return;
+  if (typeof value !== 'string') {
+    errors.push(`${path} must be a base64 PNG, JPEG, or WebP data URL`);
+    return;
+  }
+
+  const match = imageDataUrlPattern.exec(value);
+  if (!match || match[2].length % 4 !== 0) {
+    errors.push(`${path} must be a base64 PNG, JPEG, or WebP data URL`);
+    return;
+  }
+
+  const padding = match[2].endsWith('==') ? 2 : match[2].endsWith('=') ? 1 : 0;
+  const byteLength = (match[2].length * 3) / 4 - padding;
+  if (byteLength > maxImageBytes) {
+    errors.push(`${path} must be at most 5 MB`);
+  }
+}
+
 function validateTeam(team, path, errors) {
   if (!isRecord(team)) {
     errors.push(`${path} must be an object`);
@@ -48,6 +82,7 @@ function validateTeam(team, path, errors) {
   checkUnknownFields(team, teamFields, `${path}.`, errors);
   checkString(team.name, `${path}.name`, errors, 200);
   checkNumber(team.score, `${path}.score`, errors);
+  checkImageDataUrl(team.logo, `${path}.logo`, errors);
 }
 
 function validatePlayer(player, path, errors) {
@@ -60,6 +95,7 @@ function validatePlayer(player, path, errors) {
   checkString(player.id, `${path}.id`, errors, 100);
   checkString(player.jersey, `${path}.jersey`, errors, 10);
   checkString(player.name, `${path}.name`, errors, 200);
+  checkImageDataUrl(player.photo, `${path}.photo`, errors);
 
   if (player.team !== 'Team A' && player.team !== 'Team B') {
     errors.push(`${path}.team must be "Team A" or "Team B"`);
@@ -67,6 +103,25 @@ function validatePlayer(player, path, errors) {
 
   for (const stat of ['pts', 'reb', 'ast', 'stl', 'blk', 'to']) {
     checkNumber(player[stat], `${path}.${stat}`, errors);
+  }
+}
+
+function validateImageGeneration(settings, errors) {
+  if (settings === undefined) return;
+  if (!isRecord(settings)) {
+    errors.push('imageGeneration must be an object');
+    return;
+  }
+
+  checkUnknownFields(settings, generationFields, 'imageGeneration.', errors);
+  if (settings.prompt !== undefined) {
+    checkString(settings.prompt, 'imageGeneration.prompt', errors, 1000);
+  }
+  if (settings.size !== undefined && !imageSizes.has(settings.size)) {
+    errors.push('imageGeneration.size must be 1024x1024, 1024x1536, 1536x1024, or auto');
+  }
+  if (settings.quality !== undefined && !imageQualities.has(settings.quality)) {
+    errors.push('imageGeneration.quality must be low, medium, high, or auto');
   }
 }
 
@@ -82,6 +137,7 @@ export function validateGamePayload(payload) {
   checkString(payload.location, 'location', errors, 200);
   validateTeam(payload.teamA, 'teamA', errors);
   validateTeam(payload.teamB, 'teamB', errors);
+  validateImageGeneration(payload.imageGeneration, errors);
 
   if (!Array.isArray(payload.players)) {
     errors.push('players must be an array');
@@ -97,6 +153,10 @@ export function validateGamePayload(payload) {
         playerIds.add(player.id);
       }
     });
+  }
+
+  if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > maxGameDocumentBytes) {
+    errors.push('The complete game payload must be at most 14 MB so it fits safely in MongoDB');
   }
 
   return errors;

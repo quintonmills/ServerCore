@@ -23,6 +23,7 @@ Set the values in `.env`:
 | `MONGODB_URI` | MongoDB connection string | Required |
 | `CORS_ORIGIN` | Allowed browser origin | `*` if unset |
 | `PUBLIC_BASE_URL` | Base URL used in returned graphic links | `http://localhost:<PORT>` |
+| `OPENAI_API_KEY` | API key used to generate player portraits with OpenAI | Required for flyer generation |
 
 For a local MongoDB instance using Docker:
 
@@ -62,8 +63,16 @@ The server waits for a successful MongoDB connection before it starts accepting 
 {
   "gameId": "game-101",
   "location": "Marietta Rec League",
-  "teamA": { "name": "Red Team", "score": 24 },
-  "teamB": { "name": "Blue Team", "score": 18 },
+  "teamA": {
+    "name": "Red Team",
+    "score": 24,
+    "logo": "data:image/png;base64,<base64-encoded-team-logo>"
+  },
+  "teamB": {
+    "name": "Blue Team",
+    "score": 18,
+    "logo": "data:image/png;base64,<base64-encoded-team-logo>"
+  },
   "players": [
     {
       "id": "p1",
@@ -75,11 +84,19 @@ The server waits for a successful MongoDB connection before it starts accepting 
       "ast": 3,
       "stl": 1,
       "blk": 0,
-      "to": 2
+      "to": 2,
+      "photo": "data:image/jpeg;base64,<base64-encoded-player-photo>"
     }
-  ]
+  ],
+  "imageGeneration": {
+    "prompt": "Add a subtle arena spotlight",
+    "size": "1024x1536",
+    "quality": "high"
+  }
 }
 ```
+
+`photo` is the player's reference image; `logo` is the reference logo for its team. Supply PNG, JPEG, or WebP image data URLs, each no larger than 5 MB. A photo is required for each selected scorer (up to three players with at least one point), and a logo is required for each selected player's team. `imageGeneration` is optional: `prompt` adds art direction, `size` accepts `1024x1024`, `1024x1536`, `1536x1024`, or `auto`, and `quality` accepts `low`, `medium`, `high`, or `auto`. Defaults are `1024x1536` and `high`. Uploaded player photos, team logos, and image-generation settings are saved with the game in MongoDB; the API limits the complete stored game payload to 14 MB to stay safely below MongoDB's 16 MB document limit. Image data is omitted from the response to keep it small.
 
 The API returns `200 OK` with the upserted game and generated cards. The `game` includes Mongoose timestamps, and each graphic has its player's ID and name, its generated file path, and a public URL:
 
@@ -136,7 +153,7 @@ If persistence or rendering fails, the API returns an error and never reports su
 
 ## Stat cards
 
-Cards are dark-mode JPEGs rendered locally at 1080 × 1350. No remote fonts or images are used. Generated files are written to `output/` (ignored by git) and served at `/output/<filename>`. Set `PUBLIC_BASE_URL` to the externally reachable API origin when links should point somewhere other than the local default.
+For each selected scorer, the API sends the player photo, their team's logo, player identity, stats, and optional art direction to OpenAI's `gpt-image-1` image-edit endpoint to generate a portrait. The logo and exact player statistics are then composited into the existing dark-mode 1080 × 1350 Canvas flyer template, so generated imagery cannot alter the displayed logo or stat values. Uploaded reference images and generation settings are saved with the game in MongoDB; generated JPEGs are written to `output/` (ignored by git) and served at `/output/<filename>`. Set `PUBLIC_BASE_URL` to the externally reachable API origin when links should point somewhere other than the local default.
 
 Cards are generated for at most three players with at least one point. Selection is centralized in `src/services/selectPlayersForCards.js` and ranks players by points, then rebounds, then assists, descending. Ties after assists retain their incoming player order.
 
