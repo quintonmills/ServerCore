@@ -1,0 +1,38 @@
+import cors from 'cors';
+import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import Game from './models/Game.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import { generateStatCard } from './services/renderGraphic.js';
+import { createGameRouter } from './routes/gameRoutes.js';
+
+const outputDirectory = fileURLToPath(new URL('../output/', import.meta.url));
+
+export function createApp({
+  GameModel = Game,
+  graphicGenerator = generateStatCard,
+  corsOrigin = process.env.CORS_ORIGIN || '*',
+  publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 5000}`,
+} = {}) {
+  const app = express();
+  app.use(cors({ origin: corsOrigin }));
+  app.use(express.json({ limit: '1mb' }));
+  app.use('/output', express.static(path.resolve(outputDirectory), { fallthrough: false }));
+  app.get('/api/health', (request, response) => response.json({ status: 'ok' }));
+  app.use(
+    '/api/games',
+    createGameRouter({
+      GameModel,
+      generateStatCard: graphicGenerator,
+      publicBaseUrl,
+    }),
+  );
+  app.use((request, response, next) => {
+    const error = new Error('Resource not found');
+    error.status = 404;
+    next(error);
+  });
+  app.use(errorHandler);
+  return app;
+}
