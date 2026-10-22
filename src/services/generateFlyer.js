@@ -47,5 +47,6 @@ export async function generateFlyer(
 
   const baseUrl = publicBaseUrl?.replace(/\/+$/, '');
   const publicUrl = `${baseUrl || ''}/output/${encodeURIComponent(filename)}`;
-  return { filePath, publicUrl };
+  const downloadUrl = `${baseUrl || ''}/api/games/flyers/${encodeURIComponent(filename)}/download`;
+  return { filePath, publicUrl, downloadUrl };
 }

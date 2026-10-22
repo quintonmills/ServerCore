@@ -25,7 +25,7 @@ test('saves the complete OpenAI-generated flyer JPEG without local image composi
       teamB: { name: 'Blue Team', score: 18 },
     },
     {
-      publicBaseUrl: 'http://localhost:5000/',
+      publicBaseUrl: 'https://scorekings-api.example.com/',
       playerImage: referenceDataUrl,
       teamLogoImage: referenceDataUrl,
       imageGenerator: async () => generatedFlyer,
@@ -37,7 +37,11 @@ test('saves the complete OpenAI-generated flyer JPEG without local image composi
     assert.deepEqual(image, generatedFlyer);
     assert.equal(dirname(graphic.filePath), resolve('output'));
     assert.match(graphic.filePath, /game-101-p1-[a-f0-9-]+\.jpg$/);
-    assert.match(graphic.publicUrl, /^http:\/\/localhost:5000\/output\//);
+    assert.match(graphic.publicUrl, /^https:\/\/scorekings-api\.example\.com\/output\//);
+    assert.match(
+      graphic.downloadUrl,
+      /^https:\/\/scorekings-api\.example\.com\/api\/games\/flyers\/.*\/download$/,
+    );
   } finally {
     await unlink(graphic.filePath);
   }

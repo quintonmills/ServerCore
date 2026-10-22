@@ -28,6 +28,19 @@ export function createApp({
   app.use(cors({ origin: allowedOrigins }));
   app.use(express.json({ limit: '35mb' }));
   app.use('/output', express.static(path.resolve(outputDirectory), { fallthrough: false }));
+  app.get('/api/games/flyers/:filename/download', (request, response, next) => {
+    const { filename } = request.params;
+    if (!/^[a-zA-Z0-9_-]+\.jpg$/.test(filename)) {
+      const error = new Error('Resource not found');
+      error.status = 404;
+      next(error);
+      return;
+    }
+
+    response.type('image/jpeg');
+    response.attachment(filename);
+    response.sendFile(filename, { root: outputDirectory }, next);
+  });
   app.get('/api/health', (request, response) => response.json({ status: 'ok' }));
   app.use(
     '/api/games',

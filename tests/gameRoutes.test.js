@@ -1,14 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createApp } from '../src/app.js';
 import { ImageGenerationError } from '../src/utils/rasterImage.js';
-import { createRasterImageDataUrl } from './rasterImageFixtures.js';
+import { createGeneratedJpegBuffer, createRasterImageDataUrl } from './rasterImageFixtures.js';
 
 const pngDataUrl = createRasterImageDataUrl();
+const outputDirectory = fileURLToPath(new URL('../output/', import.meta.url));
 const payload = {
   gameId: 'game-101',
   location: 'Marietta Rec League',
@@ -48,6 +50,31 @@ async function withServer(app, run) {
 test('finalize persists the supplied game ID and returns generated graphics', async () => {
   let savedPayload;
   let renderCalls = 0;
+  const filename = `game-101-p2-${randomUUID()}.jpg`;
+  const flyerBuffer = createGeneratedJpegBuffer();
+  const flyerPath = path.join(outputDirectory, filename);
+  const multiPlayerPayload = {
+    ...payload,
+    teamB: { ...payload.teamB, logo: pngDataUrl },
+    players: [
+      ...payload.players,
+      {
+        ...payload.players[0],
+        id: 'p2',
+        team: 'Team B',
+        name: 'Alex',
+        pts: 18,
+        photo: pngDataUrl,
+      },
+      {
+        ...payload.players[0],
+        id: 'p3',
+        name: 'Jordan',
+        pts: 14,
+        reb: 8,
+      },
+    ],
+  };
   const GameModel = {
     async findOneAndUpdate(filter, update) {
       savedPayload = update.$set;
@@ -57,38 +84,62 @@ test('finalize persists the supplied game ID and returns generated graphics', as
   };
   const app = createApp({
     GameModel,
-    publicBaseUrl: 'http://localhost:5000',
+    publicBaseUrl: 'https://scorekings-api.example.com',
     flyerGenerator: async (player, game, options) => {
       renderCalls += 1;
-      assert.equal(options.playerImage, payload.players[0].photo);
-      assert.equal(options.teamLogoImage, payload.teamA.logo);
-      return { filePath: '/tmp/test-card.jpg', publicUrl: `/output/${player.id}.jpg` };
+      assert.equal(player.id, 'p2');
+      assert.equal(options.playerImage, pngDataUrl);
+      assert.equal(options.teamLogoImage, pngDataUrl);
+      await mkdir(outputDirectory, { recursive: true });
+      await writeFile(flyerPath, flyerBuffer);
+      return {
+        filePath: flyerPath,
+        publicUrl: `https://scorekings-api.example.com/output/${filename}`,
+        downloadUrl: `https://scorekings-api.example.com/api/games/flyers/${filename}/download`,
+      };
     },
   });
 
-  await withServer(app, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/api/games/finalize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const body = await response.json();
+  try {
+    await withServer(app, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/games/finalize`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(multiPlayerPayload),
+      });
+      const body = await response.json();
 
-    assert.equal(response.status, 200);
-    assert.equal(body.game.gameId, 'game-101');
-    assert.equal(body.graphics[0].playerId, 'p1');
-    assert.equal(body.graphics[0].publicUrl, '/output/p1.jpg');
-    assert.equal(savedPayload.gameId, 'game-101');
-    assert.equal(savedPayload.players[0].photo, payload.players[0].photo);
-    assert.equal(savedPayload.teamA.logo, payload.teamA.logo);
-    assert.deepEqual(savedPayload.imageGeneration, {
-      ...payload.imageGeneration,
-      size: '1024x1536',
+      assert.equal(response.status, 200);
+      assert.equal(body.game.gameId, 'game-101');
+      assert.equal(body.graphics.length, 1);
+      assert.equal(body.graphics[0].playerId, 'p2');
+      assert.equal(body.graphics[0].publicUrl, `https://scorekings-api.example.com/output/${filename}`);
+      assert.equal(
+        body.graphics[0].downloadUrl,
+        `https://scorekings-api.example.com/api/games/flyers/${filename}/download`,
+      );
+      assert.equal(savedPayload.gameId, 'game-101');
+      assert.equal(savedPayload.players[0].photo, multiPlayerPayload.players[0].photo);
+      assert.equal(savedPayload.teamA.logo, multiPlayerPayload.teamA.logo);
+      assert.deepEqual(savedPayload.imageGeneration, {
+        ...multiPlayerPayload.imageGeneration,
+        size: '1024x1536',
+      });
+      assert.equal(body.game.players[0].photo, undefined);
+      assert.equal(body.game.teamA.logo, undefined);
+      assert.equal(renderCalls, 1);
+
+      const downloadUrl = new URL(body.graphics[0].downloadUrl);
+      downloadUrl.host = new URL(baseUrl).host;
+      const downloadResponse = await fetch(downloadUrl);
+      assert.equal(downloadResponse.status, 200);
+      assert.equal(downloadResponse.headers.get('content-type'), 'image/jpeg');
+      assert.match(downloadResponse.headers.get('content-disposition'), /^attachment;/);
+      assert.deepEqual(Buffer.from(await downloadResponse.arrayBuffer()), flyerBuffer);
     });
-    assert.equal(body.game.players[0].photo, undefined);
-    assert.equal(body.game.teamA.logo, undefined);
-    assert.equal(renderCalls, 1);
-  });
+  } finally {
+    await rm(flyerPath, { force: true });
+  }
 });
 
 test('invalid payload returns a consistent 400 response without persistence', async () => {
@@ -209,50 +260,64 @@ test('returns a clear gateway error when image generation fails', async () => {
   });
 });
 
-test('rendering failure returns an error and removes cards already generated in the request', async () => {
-  const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'scorekings-test-'));
-  const generatedPath = path.join(temporaryDirectory, 'first-card.jpg');
-  let renderCalls = 0;
-  const game = {
+test('a game without an eligible scorer returns a validation error without persistence', async () => {
+  let saveCalls = 0;
+  const noEligibleScorer = {
     ...payload,
-    players: [
-      payload.players[0],
-      { ...payload.players[0], id: 'p2', name: 'Alex', pts: 8 },
-    ],
+    players: [{ ...payload.players[0], pts: 0 }],
   };
   const app = createApp({
     GameModel: {
       async findOneAndUpdate() {
-        return game;
+        saveCalls += 1;
+      },
+    },
+    flyerGenerator: async () => {
+      throw new Error('Renderer must not be called');
+    },
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/games/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(noEligibleScorer),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.equal(body.error.code, 'VALIDATION_ERROR');
+    assert.match(body.error.message, /at least one player/i);
+    assert.equal(saveCalls, 0);
+  });
+});
+
+test('rendering failure returns an error and does not report a generated graphic', async () => {
+  let renderCalls = 0;
+  const app = createApp({
+    GameModel: {
+      async findOneAndUpdate() {
+        return payload;
       },
     },
     flyerGenerator: async () => {
       renderCalls += 1;
-      if (renderCalls === 1) {
-        await writeFile(generatedPath, 'test graphic');
-        return { filePath: generatedPath, publicUrl: '/output/first-card.jpg' };
-      }
       throw new Error('Rendering failed');
     },
   });
 
-  try {
-    await withServer(app, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/games/finalize`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(game),
-      });
-      const body = await response.json();
-
-      assert.equal(response.status, 500);
-      assert.equal(body.error.code, 'INTERNAL_SERVER_ERROR');
-      assert.equal(renderCalls, 2);
-      await assert.rejects(access(generatedPath), { code: 'ENOENT' });
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/games/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
     });
-  } finally {
-    await rm(temporaryDirectory, { recursive: true, force: true });
-  }
+    const body = await response.json();
+
+    assert.equal(response.status, 500);
+    assert.equal(body.error.code, 'INTERNAL_SERVER_ERROR');
+    assert.equal(renderCalls, 1);
+  });
 });
 
 test('health endpoint is available without a database', async () => {

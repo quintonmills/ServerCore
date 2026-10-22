@@ -29,10 +29,10 @@ The Docker image uses Node.js 22 on Debian Bookworm, installs locked production 
 | `MONGODB_URI` | MongoDB Atlas connection string for the `scorekings` database |
 | `OPENAI_API_KEY` | Server-side OpenAI API key used for image generation |
 | `CORS_ORIGIN` | Comma-separated exact origins allowed to call the API, e.g. `https://scorekings.example.com,https://admin.example.com` |
-| `PUBLIC_BASE_URL` | The public API origin, e.g. `https://scorekings-api.onrender.com` |
+| `PUBLIC_BASE_URL` | The externally reachable HTTPS API origin, e.g. `https://scorekings-api.onrender.com` |
 | `PORT` | Use the host-provided value if required; the app defaults to `5000` locally |
 
-The service listens on `process.env.PORT`. Do not set `PUBLIC_BASE_URL` to the frontend URL; it must be the backend's public origin because generated graphic URLs are served by this API. `CORS_ORIGIN` must contain the frontend's exact browser origin (scheme and hostname, and any non-default port), without a trailing path. For an iPad app using a WebView, configure the origin that the WebView actually sends. Do not use `*` in production unless the API is intentionally public to any browser origin.
+The service listens on `process.env.PORT`. Do not set `PUBLIC_BASE_URL` to the frontend URL; it must be the backend's public HTTPS origin because generated flyer preview and download URLs are served by this API. The download URL is stable and does not expire while its JPEG remains in storage; it sends the flyer as an attachment for QR-code downloads. `CORS_ORIGIN` must contain the frontend's exact browser origin (scheme and hostname, and any non-default port), without a trailing path. For an iPad app using a WebView, configure the origin that the WebView actually sends. Do not use `*` in production unless the API is intentionally public to any browser origin.
 
 ## 4. Verify the deployment
 
@@ -84,10 +84,10 @@ Example request shape (replace each image placeholder with a real base64 data UR
 }
 ```
 
-Use `curl --request POST "$PUBLIC_BASE_URL/api/games/finalize" --header 'Content-Type: application/json' --data-binary @payload.json` after saving a complete request with real image data URLs to `payload.json`. A successful response includes generated flyer URLs under `graphics[].publicUrl`. Open one of those URLs to confirm the generated JPEG is served by `/output/`.
+Use `curl --request POST "$PUBLIC_BASE_URL/api/games/finalize" --header 'Content-Type: application/json' --data-binary @payload.json` after saving a complete request with real image data URLs to `payload.json`. A successful response contains exactly one graphic with `publicUrl` for preview and `downloadUrl` for QR-code downloads. Open the preview URL to check the JPEG; request `downloadUrl` to verify that the JPEG is served with an attachment disposition.
 
 ## Generated JPEG storage
 
-The service creates `output/` on app startup and serves generated JPEGs from `/output/`. This is suitable for a small, single-instance MVP pilot, but container filesystems are generally ephemeral: generated images may disappear after a restart, redeploy, or instance replacement. Avoid multiple instances with local-only output, since a later request can be routed to an instance that does not have the image.
+The service creates `output/` on app startup and serves generated JPEGs from `/output/` and `/api/games/flyers/<filename>/download`. The download URL remains valid only while the JPEG remains available. Configure persistent storage for `output/` to keep QR-code downloads working after restarts and redeployments. Avoid multiple instances with local-only output, since a later request can be routed to an instance that does not have the image.
 
 For durable flyers or horizontal scaling, store JPEGs in S3-compatible object storage (for example AWS S3, Cloudflare R2, or a managed bucket) and return stable public or signed URLs. A persistent host volume mounted at `/app/output` can be an interim single-instance option when supported by the provider.

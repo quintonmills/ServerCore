@@ -55,7 +55,18 @@ export function createGameController({ GameModel, generateFlyer, publicBaseUrl }
       return;
     }
 
-    const players = selectPlayersForCards(request.body.players);
+    const players = selectPlayersForCards(request.body.players).slice(0, 1);
+    if (players.length === 0) {
+      response.status(400).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'At least one player with one or more points is required to generate a flyer',
+          details: ['players must include at least one player with one or more points'],
+        },
+      });
+      return;
+    }
+
     const playerInputs = new Map(request.body.players.map((player) => [player.id, player]));
     const assetErrors = [];
     for (const player of players) {
