@@ -20,7 +20,7 @@ This service can be deployed from its Dockerfile to Render, Railway, Fly.io, or 
 4. Configure the environment variables below in the host dashboard. Do not commit production credentials or put them in Docker build arguments.
 5. Deploy the service and wait for a successful MongoDB connection and a healthy deployment.
 
-The Docker image uses Node.js 22 on Debian Bookworm, installs locked production dependencies with `npm ci`, and runs as the unprivileged `node` user. The `@napi-rs/canvas` package supplies platform-specific Linux native binaries through its optional dependencies. The Docker build installs dependencies inside the Linux container, rather than copying host `node_modules`.
+The Docker image uses Node.js 22 on Debian Bookworm, installs locked production dependencies with `npm ci`, and runs as the unprivileged `node` user. The Docker build installs dependencies inside the Linux container, rather than copying host `node_modules`.
 
 ## 3. Configure environment variables
 

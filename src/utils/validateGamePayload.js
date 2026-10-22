@@ -1,3 +1,5 @@
+import { InvalidImageAssetError, parseRasterImageDataUrl } from './rasterImage.js';
+
 const rootFields = new Set([
   'gameId',
   'location',
@@ -21,8 +23,6 @@ const playerFields = new Set([
   'photo',
 ]);
 const generationFields = new Set(['prompt', 'size', 'quality']);
-const imageDataUrlPattern = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
-const maxImageBytes = 5 * 1024 * 1024;
 const maxGameDocumentBytes = 14 * 1024 * 1024;
 const imageSizes = new Set(['1024x1024', '1024x1536', '1536x1024', 'auto']);
 const imageQualities = new Set(['low', 'medium', 'high', 'auto']);
@@ -55,21 +55,11 @@ function checkNumber(value, path, errors) {
 
 function checkImageDataUrl(value, path, errors) {
   if (value === undefined) return;
-  if (typeof value !== 'string') {
-    errors.push(`${path} must be a base64 PNG, JPEG, or WebP data URL`);
-    return;
-  }
-
-  const match = imageDataUrlPattern.exec(value);
-  if (!match || match[2].length % 4 !== 0) {
-    errors.push(`${path} must be a base64 PNG, JPEG, or WebP data URL`);
-    return;
-  }
-
-  const padding = match[2].endsWith('==') ? 2 : match[2].endsWith('=') ? 1 : 0;
-  const byteLength = (match[2].length * 3) / 4 - padding;
-  if (byteLength > maxImageBytes) {
-    errors.push(`${path} must be at most 5 MB`);
+  try {
+    parseRasterImageDataUrl(value, path);
+  } catch (error) {
+    if (!(error instanceof InvalidImageAssetError)) throw error;
+    errors.push(error.message);
   }
 }
 

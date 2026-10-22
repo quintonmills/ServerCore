@@ -1,15 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { unlink } from 'node:fs/promises';
+import { readFile, unlink } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { createCanvas, loadImage } from '@napi-rs/canvas';
-import { generateStatCard } from '../src/services/renderGraphic.js';
+import { generateFlyer } from '../src/services/generateFlyer.js';
+import { createGeneratedJpegBuffer, createRasterImageDataUrl } from './rasterImageFixtures.js';
 
-test('renders a 1080 by 1350 JPEG with a safe file path and public URL', async () => {
-  const referenceImage = createCanvas(64, 64);
-  referenceImage.getContext('2d').fillRect(0, 0, 64, 64);
-  const referenceDataUrl = `data:image/png;base64,${(await referenceImage.encode('png')).toString('base64')}`;
-  const graphic = await generateStatCard(
+test('saves the complete OpenAI-generated flyer JPEG without local image composition', async () => {
+  const referenceDataUrl = createRasterImageDataUrl('png');
+  const generatedFlyer = createGeneratedJpegBuffer();
+  const graphic = await generateFlyer(
     {
       id: '../p1',
       name: 'A very long player name that still fits gracefully within the stat card',
@@ -29,14 +28,13 @@ test('renders a 1080 by 1350 JPEG with a safe file path and public URL', async (
       publicBaseUrl: 'http://localhost:5000/',
       playerImage: referenceDataUrl,
       teamLogoImage: referenceDataUrl,
-      imageGenerator: async () => referenceImage.encode('png'),
+      imageGenerator: async () => generatedFlyer,
     },
   );
 
   try {
-    const image = await loadImage(graphic.filePath);
-    assert.equal(image.width, 1080);
-    assert.equal(image.height, 1350);
+    const image = await readFile(graphic.filePath);
+    assert.deepEqual(image, generatedFlyer);
     assert.equal(dirname(graphic.filePath), resolve('output'));
     assert.match(graphic.filePath, /game-101-p1-[a-f0-9-]+\.jpg$/);
     assert.match(graphic.publicUrl, /^http:\/\/localhost:5000\/output\//);

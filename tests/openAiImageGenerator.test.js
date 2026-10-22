@@ -1,13 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generatePlayerPortrait } from '../src/services/openAiImageGenerator.js';
+import {
+  createGeneratedJpegBuffer,
+  createRasterImageDataUrl,
+} from './rasterImageFixtures.js';
+import { generateFlyerImage } from '../src/services/openAiImageGenerator.js';
 
 test('sends the player photo, team logo, and tailored flyer details to OpenAI', async () => {
+  const playerImage = createRasterImageDataUrl('png');
+  const teamLogoImage = createRasterImageDataUrl('jpeg');
+  const generatedImage = createGeneratedJpegBuffer();
   let requestUrl;
   let requestOptions;
-  const portrait = Buffer.from('generated portrait');
 
-  const result = await generatePlayerPortrait({
+  const result = await generateFlyerImage({
     player: {
       name: 'Marcus',
       jersey: '3',
@@ -15,13 +21,16 @@ test('sends the player photo, team logo, and tailored flyer details to OpenAI', 
       pts: 14,
       reb: 5,
       ast: 3,
+      stl: 1,
+      blk: 0,
+      to: 2,
     },
     game: {
       teamA: { name: 'Red Team' },
       teamB: { name: 'Blue Team' },
     },
-    playerImage: 'data:image/png;base64,cGxheWVy',
-    teamLogoImage: 'data:image/jpeg;base64,bG9nbw==',
+    playerImage,
+    teamLogoImage,
     imageGeneration: {
       prompt: 'Add a subtle arena spotlight',
       size: '1024x1024',
@@ -34,7 +43,7 @@ test('sends the player photo, team logo, and tailored flyer details to OpenAI', 
       return {
         ok: true,
         async json() {
-          return { data: [{ b64_json: portrait.toString('base64') }] };
+          return { data: [{ b64_json: generatedImage.toString('base64') }] };
         },
       };
     },
@@ -52,24 +61,31 @@ test('sends the player photo, team logo, and tailored flyer details to OpenAI', 
   assert.match(form.get('prompt'), /Marcus/);
   assert.match(form.get('prompt'), /Red Team/);
   assert.match(form.get('prompt'), /subtle arena spotlight/);
+  assert.match(form.get('prompt'), /complete, finished basketball player stat flyer/);
+  assert.match(form.get('prompt'), /POINTS: 14/);
+  assert.match(form.get('prompt'), /TURNOVERS: 2/);
   const references = form.getAll('image[]');
   assert.equal(references.length, 2);
   assert.equal(references[0].type, 'image/png');
   assert.equal(references[1].type, 'image/jpeg');
-  assert.deepEqual(result, portrait);
+  assert.equal(references[0].size, Buffer.from(playerImage.split(',')[1], 'base64').length);
+  assert.equal(references[1].size, Buffer.from(teamLogoImage.split(',')[1], 'base64').length);
+  assert.deepEqual(result, generatedImage);
 });
 
 test('reports OpenAI API failures and missing generated image content', async () => {
+  const playerImage = createRasterImageDataUrl('webp');
+  const teamLogoImage = createRasterImageDataUrl('png');
   const args = {
     player: { name: 'Marcus', jersey: '3', team: 'Team A', pts: 14, reb: 5, ast: 3 },
     game: { teamA: { name: 'Red Team' }, teamB: { name: 'Blue Team' } },
-    playerImage: 'data:image/png;base64,cGxheWVy',
-    teamLogoImage: 'data:image/png;base64,bG9nbw==',
+    playerImage,
+    teamLogoImage,
     apiKey: 'test-key',
   };
 
   await assert.rejects(
-    generatePlayerPortrait({
+    generateFlyerImage({
       ...args,
       fetchImplementation: async () => ({
         ok: false,
@@ -79,10 +95,10 @@ test('reports OpenAI API failures and missing generated image content', async ()
         },
       }),
     }),
-    /OpenAI image generation failed \(429\): rate limited/,
+    /image-generation service returned HTTP 429/,
   );
   await assert.rejects(
-    generatePlayerPortrait({
+    generateFlyerImage({
       ...args,
       fetchImplementation: async () => ({
         ok: true,
@@ -91,6 +107,44 @@ test('reports OpenAI API failures and missing generated image content', async ()
         },
       }),
     }),
-    /did not contain an image/,
+    /image-generation service could not create a valid flyer image/,
   );
+  await assert.rejects(
+    generateFlyerImage({
+      ...args,
+      fetchImplementation: async () => ({
+        ok: true,
+        async json() {
+          return { data: [{ b64_json: Buffer.from('not an image').toString('base64') }] };
+        },
+      }),
+    }),
+    /image-generation service could not create a valid flyer image/,
+  );
+});
+
+test('sends valid WebP raster references to the image-edit endpoint', async () => {
+  const image = createRasterImageDataUrl('webp');
+  const generatedFlyer = createGeneratedJpegBuffer();
+  let submittedFiles;
+
+  await generateFlyerImage({
+    player: { name: 'Marcus', jersey: '3', team: 'Team A', pts: 14, reb: 5, ast: 3 },
+    game: { teamA: { name: 'Red Team' }, teamB: { name: 'Blue Team' } },
+    playerImage: image,
+    teamLogoImage: image,
+    apiKey: 'test-key',
+    fetchImplementation: async (_url, { body }) => {
+      submittedFiles = body.getAll('image[]');
+      return {
+        ok: true,
+        async json() {
+          return { data: [{ b64_json: generatedFlyer.toString('base64') }] };
+        },
+      };
+    },
+  });
+
+  assert.equal(submittedFiles.length, 2);
+  assert.ok(submittedFiles.every((file) => file.type === 'image/webp'));
 });

@@ -5,11 +5,14 @@ import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/app.js';
+import { ImageGenerationError } from '../src/utils/rasterImage.js';
+import { createRasterImageDataUrl } from './rasterImageFixtures.js';
 
+const pngDataUrl = createRasterImageDataUrl();
 const payload = {
   gameId: 'game-101',
   location: 'Marietta Rec League',
-  teamA: { name: 'Red Team', score: 24, logo: 'data:image/png;base64,aGVsbG8=' },
+  teamA: { name: 'Red Team', score: 24, logo: pngDataUrl },
   teamB: { name: 'Blue Team', score: 18 },
   imageGeneration: { prompt: 'arena spotlight', quality: 'medium' },
   players: [
@@ -24,7 +27,7 @@ const payload = {
       stl: 1,
       blk: 0,
       to: 2,
-      photo: 'data:image/png;base64,aGVsbG8=',
+      photo: pngDataUrl,
     },
   ],
 };
@@ -55,7 +58,7 @@ test('finalize persists the supplied game ID and returns generated graphics', as
   const app = createApp({
     GameModel,
     publicBaseUrl: 'http://localhost:5000',
-    graphicGenerator: async (player, game, options) => {
+    flyerGenerator: async (player, game, options) => {
       renderCalls += 1;
       assert.equal(options.playerImage, payload.players[0].photo);
       assert.equal(options.teamLogoImage, payload.teamA.logo);
@@ -96,7 +99,7 @@ test('invalid payload returns a consistent 400 response without persistence', as
         saveCalls += 1;
       },
     },
-    graphicGenerator: async () => {
+    flyerGenerator: async () => {
       throw new Error('Renderer must not be called');
     },
   });
@@ -127,7 +130,7 @@ test('selected players must include a photo and their team must include a logo',
         saveCalls += 1;
       },
     },
-    graphicGenerator: async () => {
+    flyerGenerator: async () => {
       throw new Error('Renderer must not be called');
     },
   });
@@ -148,6 +151,64 @@ test('selected players must include a photo and their team must include a logo',
   });
 });
 
+test('rejects an invalid raster asset with a clear JSON error before persistence', async () => {
+  let saveCalls = 0;
+  const invalidPayload = structuredClone(payload);
+  invalidPayload.players[0].photo = 'data:image/png;base64,aGVsbG8=';
+  const app = createApp({
+    GameModel: {
+      async findOneAndUpdate() {
+        saveCalls += 1;
+      },
+    },
+    flyerGenerator: async () => {
+      throw new Error('Renderer must not be called');
+    },
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/games/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(invalidPayload),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.equal(body.error.code, 'INVALID_IMAGE_ASSET');
+    assert.match(body.error.details[0], /contents do not match the declared image\/png format/);
+    assert.equal(saveCalls, 0);
+  });
+});
+
+test('returns a clear gateway error when image generation fails', async () => {
+  const app = createApp({
+    GameModel: {
+      async findOneAndUpdate(_filter, update) {
+        return update.$set;
+      },
+    },
+    flyerGenerator: async () => {
+      throw new ImageGenerationError();
+    },
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/games/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 502);
+    assert.deepEqual(body.error, {
+      code: 'IMAGE_GENERATION_FAILED',
+      message: 'The image-generation service could not create a valid flyer image.',
+    });
+  });
+});
+
 test('rendering failure returns an error and removes cards already generated in the request', async () => {
   const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'scorekings-test-'));
   const generatedPath = path.join(temporaryDirectory, 'first-card.jpg');
@@ -165,7 +226,7 @@ test('rendering failure returns an error and removes cards already generated in 
         return game;
       },
     },
-    graphicGenerator: async () => {
+    flyerGenerator: async () => {
       renderCalls += 1;
       if (renderCalls === 1) {
         await writeFile(generatedPath, 'test graphic');

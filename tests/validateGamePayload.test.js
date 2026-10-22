@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createRasterImageDataUrl } from './rasterImageFixtures.js';
 import { validateGamePayload } from '../src/utils/validateGamePayload.js';
 
 const validPayload = {
@@ -61,4 +62,15 @@ test('validates uploaded image data URLs and image-generation options', () => {
   assert.ok(errors.some((error) => error.includes('imageGeneration.size')));
   assert.ok(errors.some((error) => error.includes('imageGeneration.quality')));
   assert.ok(errors.some((error) => error.includes('imageGeneration.extra')));
+});
+
+test('rejects malformed base64, unsupported MIME types, and MIME/signature mismatches', async () => {
+  const payload = structuredClone(validPayload);
+  const jpeg = createRasterImageDataUrl('jpeg');
+  payload.players[0].photo = 'data:image/png;base64,not-base64!';
+  payload.teamA.logo = jpeg.replace('image/jpeg', 'image/png');
+
+  const errors = validateGamePayload(payload);
+  assert.ok(errors.some((error) => error.includes('players[0].photo')));
+  assert.ok(errors.some((error) => error.includes('teamA.logo contents do not match')));
 });

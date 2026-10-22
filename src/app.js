@@ -5,14 +5,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Game from './models/Game.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { generateStatCard } from './services/renderGraphic.js';
+import { generateFlyer } from './services/generateFlyer.js';
 import { createGameRouter } from './routes/gameRoutes.js';
 
 const outputDirectory = fileURLToPath(new URL('../output/', import.meta.url));
 
 export function createApp({
   GameModel = Game,
-  graphicGenerator = generateStatCard,
+  flyerGenerator = generateFlyer,
   corsOrigin = process.env.CORS_ORIGIN || '*',
   publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 5000}`,
 } = {}) {
@@ -33,7 +33,7 @@ export function createApp({
     '/api/games',
     createGameRouter({
       GameModel,
-      generateStatCard: graphicGenerator,
+      generateFlyer: flyerGenerator,
       publicBaseUrl,
     }),
   );

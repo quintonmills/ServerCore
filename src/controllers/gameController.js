@@ -1,5 +1,6 @@
 import { unlink } from 'node:fs/promises';
 import { selectPlayersForCards } from '../services/selectPlayersForCards.js';
+import { validateRasterImageDataUrl } from '../utils/rasterImage.js';
 import { validateGamePayload } from '../utils/validateGamePayload.js';
 
 function isDuplicateKeyError(error) {
@@ -39,14 +40,15 @@ async function saveFinalizedGame(GameModel, payload) {
   }
 }
 
-export function createGameController({ GameModel, generateStatCard, publicBaseUrl }) {
+export function createGameController({ GameModel, generateFlyer, publicBaseUrl }) {
   return async function finalizeGame(request, response, next) {
     const errors = validateGamePayload(request.body);
     if (errors.length > 0) {
+      const invalidImage = errors.some((error) => error.includes('.photo') || error.includes('.logo'));
       response.status(400).json({
         error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Invalid game payload',
+          code: invalidImage ? 'INVALID_IMAGE_ASSET' : 'VALIDATION_ERROR',
+          message: invalidImage ? 'One or more uploaded images are invalid' : 'Invalid game payload',
           details: errors,
         },
       });
@@ -87,12 +89,24 @@ export function createGameController({ GameModel, generateStatCard, publicBaseUr
 
     const generated = [];
     try {
+      await Promise.all(
+        players.flatMap((player) => {
+          const input = playerInputs.get(player.id);
+          const team = player.team === 'Team A' ? request.body.teamA : request.body.teamB;
+          const teamName = player.team === 'Team A' ? 'teamA.logo' : 'teamB.logo';
+          return [
+            validateRasterImageDataUrl(input.photo, `Player ${player.id} photo`),
+            validateRasterImageDataUrl(team.logo, teamName),
+          ];
+        }),
+      );
+
       const game = await saveFinalizedGame(GameModel, gamePayload);
 
       for (const player of players) {
         const input = playerInputs.get(player.id);
         const team = player.team === 'Team A' ? request.body.teamA : request.body.teamB;
-        const graphic = await generateStatCard(player, game, {
+        const graphic = await generateFlyer(player, game, {
           publicBaseUrl,
           playerImage: input.photo,
           teamLogoImage: team.logo,
