@@ -131,6 +131,7 @@ test('finalize persists the supplied game ID and returns generated graphics', as
 
       const downloadUrl = new URL(body.graphics[0].downloadUrl);
       downloadUrl.host = new URL(baseUrl).host;
+      downloadUrl.protocol = new URL(baseUrl).protocol;
       const downloadResponse = await fetch(downloadUrl);
       assert.equal(downloadResponse.status, 200);
       assert.equal(downloadResponse.headers.get('content-type'), 'image/jpeg');

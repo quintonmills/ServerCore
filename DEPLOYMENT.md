@@ -48,7 +48,7 @@ Expected response:
 {"status":"ok"}
 ```
 
-To verify game finalization, send a valid JSON payload to `POST /api/games/finalize`. It must include a player photo for each selected scorer and a logo for each of their teams. Images must be valid PNG, JPEG, or WebP data URLs no larger than 5 MB each; the complete payload must be at most 14 MB. The request also calls OpenAI, so configure `OPENAI_API_KEY` and ensure the account has access to `gpt-image-1`.
+To verify game finalization, send a valid JSON payload to `POST /api/games/finalize`. It must include a player photo for the highest-ranked eligible scorer and a logo for that player's team. Images must be valid PNG, JPEG, or WebP data URLs no larger than 5 MB each; the complete payload must be at most 14 MB. The request also calls OpenAI, so configure `OPENAI_API_KEY` and ensure the account has access to `gpt-image-1`.
 
 Example request shape (replace each image placeholder with a real base64 data URL):
 
