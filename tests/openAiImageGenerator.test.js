@@ -6,8 +6,13 @@ import {
 } from './rasterImageFixtures.js';
 import { generateFlyerImage } from '../src/services/openAiImageGenerator.js';
 
-test('sends the player photo, team logo, and tailored flyer details to OpenAI', async () => {
-  const playerImage = createRasterImageDataUrl('png');
+test('sends the style reference, three player photos, team logo, and tailored details to OpenAI', async () => {
+  const playerImages = [
+    createRasterImageDataUrl('png'),
+    createRasterImageDataUrl('jpeg'),
+    createRasterImageDataUrl('webp'),
+  ];
+  const templateImage = createRasterImageDataUrl('png');
   const teamLogoImage = createRasterImageDataUrl('jpeg');
   const generatedImage = createGeneratedJpegBuffer();
   let requestUrl;
@@ -29,7 +34,8 @@ test('sends the player photo, team logo, and tailored flyer details to OpenAI', 
       teamA: { name: 'Red Team' },
       teamB: { name: 'Blue Team' },
     },
-    playerImage,
+    playerImages,
+    templateImage,
     teamLogoImage,
     imageGeneration: {
       prompt: 'Add a subtle arena spotlight',
@@ -61,15 +67,26 @@ test('sends the player photo, team logo, and tailored flyer details to OpenAI', 
   assert.match(form.get('prompt'), /Marcus/);
   assert.match(form.get('prompt'), /Red Team/);
   assert.match(form.get('prompt'), /subtle arena spotlight/);
-  assert.match(form.get('prompt'), /complete, finished basketball player stat flyer/);
-  assert.match(form.get('prompt'), /POINTS: 14/);
-  assert.match(form.get('prompt'), /TURNOVERS: 2/);
+  assert.match(form.get('prompt'), /one complete, original portrait-format basketball achievement flyer/);
+  assert.match(form.get('prompt'), /visual art-direction guidance only/);
+  assert.match(form.get('prompt'), /three distinct depictions/);
+  assert.match(form.get('prompt'), /14 POINTS/);
+  assert.match(form.get('prompt'), /Do not add rebounds, assists, other statistics/);
   const references = form.getAll('image[]');
-  assert.equal(references.length, 2);
-  assert.equal(references[0].type, 'image/png');
-  assert.equal(references[1].type, 'image/jpeg');
-  assert.equal(references[0].size, Buffer.from(playerImage.split(',')[1], 'base64').length);
-  assert.equal(references[1].size, Buffer.from(teamLogoImage.split(',')[1], 'base64').length);
+  assert.equal(references.length, 5);
+  assert.deepEqual(references.map((reference) => reference.type), [
+    'image/png',
+    'image/png',
+    'image/jpeg',
+    'image/webp',
+    'image/jpeg',
+  ]);
+  assert.equal(references[0].size, Buffer.from(templateImage.split(',')[1], 'base64').length);
+  assert.deepEqual(
+    references.slice(1, 4).map((reference) => reference.size),
+    playerImages.map((image) => Buffer.from(image.split(',')[1], 'base64').length),
+  );
+  assert.equal(references[4].size, Buffer.from(teamLogoImage.split(',')[1], 'base64').length);
   assert.deepEqual(result, generatedImage);
 });
 
@@ -123,7 +140,7 @@ test('reports OpenAI API failures and missing generated image content', async ()
   );
 });
 
-test('sends valid WebP raster references to the image-edit endpoint', async () => {
+test('sends valid legacy player, style, and team references to the image-edit endpoint', async () => {
   const image = createRasterImageDataUrl('webp');
   const generatedFlyer = createGeneratedJpegBuffer();
   let submittedFiles;
@@ -145,6 +162,6 @@ test('sends valid WebP raster references to the image-edit endpoint', async () =
     },
   });
 
-  assert.equal(submittedFiles.length, 2);
-  assert.ok(submittedFiles.every((file) => file.type === 'image/webp'));
+  assert.equal(submittedFiles.length, 3);
+  assert.deepEqual(submittedFiles.map((file) => file.type), ['image/png', 'image/webp', 'image/webp']);
 });

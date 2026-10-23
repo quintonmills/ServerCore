@@ -64,6 +64,17 @@ test('validates uploaded image data URLs and image-generation options', () => {
   assert.ok(errors.some((error) => error.includes('imageGeneration.extra')));
 });
 
+test('requires exactly three valid player reference photos when photos are supplied', () => {
+  const payload = structuredClone(validPayload);
+  payload.players[0].photos = [
+    createRasterImageDataUrl('png'),
+    createRasterImageDataUrl('jpeg'),
+  ];
+
+  const errors = validateGamePayload(payload);
+  assert.ok(errors.some((error) => error.includes('photos must contain exactly three')));
+});
+
 test('rejects malformed base64, unsupported MIME types, and MIME/signature mismatches', async () => {
   const payload = structuredClone(validPayload);
   const jpeg = createRasterImageDataUrl('jpeg');

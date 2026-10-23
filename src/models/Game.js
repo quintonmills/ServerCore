@@ -31,6 +31,11 @@ const playerSchema = new mongoose.Schema(
     blk: { type: Number, required: true, min: 0 },
     to: { type: Number, required: true, min: 0 },
     photo: { type: String, maxlength: 7 * 1024 * 1024 },
+    photos: {
+      type: [{ type: String, maxlength: 7 * 1024 * 1024 }],
+      default: undefined,
+      validate: (images) => images.length === 3,
+    },
   },
   { _id: false },
 );

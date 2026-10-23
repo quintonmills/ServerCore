@@ -29,7 +29,7 @@ const payload = {
       stl: 1,
       blk: 0,
       to: 2,
-      photo: pngDataUrl,
+      photos: [pngDataUrl, pngDataUrl, pngDataUrl],
     },
   ],
 };
@@ -64,7 +64,7 @@ test('finalize persists the supplied game ID and returns generated graphics', as
         team: 'Team B',
         name: 'Alex',
         pts: 18,
-        photo: pngDataUrl,
+        photos: [pngDataUrl, pngDataUrl, pngDataUrl],
       },
       {
         ...payload.players[0],
@@ -88,7 +88,7 @@ test('finalize persists the supplied game ID and returns generated graphics', as
     flyerGenerator: async (player, game, options) => {
       renderCalls += 1;
       assert.equal(player.id, 'p2');
-      assert.equal(options.playerImage, pngDataUrl);
+      assert.deepEqual(options.playerImages, [pngDataUrl, pngDataUrl, pngDataUrl]);
       assert.equal(options.teamLogoImage, pngDataUrl);
       await mkdir(outputDirectory, { recursive: true });
       await writeFile(flyerPath, flyerBuffer);
@@ -119,13 +119,13 @@ test('finalize persists the supplied game ID and returns generated graphics', as
         `https://scorekings-api.example.com/api/games/flyers/${filename}/download`,
       );
       assert.equal(savedPayload.gameId, 'game-101');
-      assert.equal(savedPayload.players[0].photo, multiPlayerPayload.players[0].photo);
+      assert.deepEqual(savedPayload.players[0].photos, multiPlayerPayload.players[0].photos);
       assert.equal(savedPayload.teamA.logo, multiPlayerPayload.teamA.logo);
       assert.deepEqual(savedPayload.imageGeneration, {
         ...multiPlayerPayload.imageGeneration,
         size: '1024x1536',
       });
-      assert.equal(body.game.players[0].photo, undefined);
+      assert.equal(body.game.players[0].photos, undefined);
       assert.equal(body.game.teamA.logo, undefined);
       assert.equal(renderCalls, 1);
 
@@ -171,10 +171,10 @@ test('invalid payload returns a consistent 400 response without persistence', as
   });
 });
 
-test('selected players must include a photo and their team must include a logo', async () => {
+test('selected scorer must include reference photos and their team must include a logo', async () => {
   let saveCalls = 0;
   const incompletePayload = structuredClone(payload);
-  delete incompletePayload.players[0].photo;
+  delete incompletePayload.players[0].photos;
   delete incompletePayload.teamA.logo;
   const app = createApp({
     GameModel: {
@@ -197,7 +197,7 @@ test('selected players must include a photo and their team must include a logo',
 
     assert.equal(response.status, 400);
     assert.equal(body.error.code, 'VALIDATION_ERROR');
-    assert.ok(body.error.details.some((detail) => detail.includes('.photo is required')));
+    assert.ok(body.error.details.some((detail) => detail.includes('.photos is required')));
     assert.ok(body.error.details.some((detail) => detail.includes('teamA.logo is required')));
     assert.equal(saveCalls, 0);
   });
@@ -206,7 +206,7 @@ test('selected players must include a photo and their team must include a logo',
 test('rejects an invalid raster asset with a clear JSON error before persistence', async () => {
   let saveCalls = 0;
   const invalidPayload = structuredClone(payload);
-  invalidPayload.players[0].photo = 'data:image/png;base64,aGVsbG8=';
+  invalidPayload.players[0].photos[0] = 'data:image/png;base64,aGVsbG8=';
   const app = createApp({
     GameModel: {
       async findOneAndUpdate() {

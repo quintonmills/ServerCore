@@ -18,8 +18,15 @@ function omitStoredImages(game) {
       };
   delete safeGame.teamA.logo;
   delete safeGame.teamB.logo;
-  safeGame.players.forEach((player) => delete player.photo);
+  safeGame.players.forEach((player) => {
+    delete player.photo;
+    delete player.photos;
+  });
   return safeGame;
+}
+
+function getPlayerImages(input) {
+  return input.photos || (input.photo ? [input.photo] : []);
 }
 
 async function saveFinalizedGame(GameModel, payload) {
@@ -72,7 +79,9 @@ export function createGameController({ GameModel, generateFlyer, publicBaseUrl }
     for (const player of players) {
       const input = playerInputs.get(player.id);
       const team = player.team === 'Team A' ? request.body.teamA : request.body.teamB;
-      if (!input.photo) assetErrors.push(`players[id=${player.id}].photo is required to generate a flyer`);
+      if (getPlayerImages(input).length === 0) {
+        assetErrors.push(`players[id=${player.id}].photos is required to generate a flyer`);
+      }
       if (!team.logo) {
         assetErrors.push(
           `${player.team === 'Team A' ? 'teamA' : 'teamB'}.logo is required to generate this player's flyer`,
@@ -106,7 +115,9 @@ export function createGameController({ GameModel, generateFlyer, publicBaseUrl }
           const team = player.team === 'Team A' ? request.body.teamA : request.body.teamB;
           const teamName = player.team === 'Team A' ? 'teamA.logo' : 'teamB.logo';
           return [
-            validateRasterImageDataUrl(input.photo, `Player ${player.id} photo`),
+            ...getPlayerImages(input).map((image, index) =>
+              validateRasterImageDataUrl(image, `Player ${player.id} photo ${index + 1}`),
+            ),
             validateRasterImageDataUrl(team.logo, teamName),
           ];
         }),
@@ -119,7 +130,7 @@ export function createGameController({ GameModel, generateFlyer, publicBaseUrl }
         const team = player.team === 'Team A' ? request.body.teamA : request.body.teamB;
         const graphic = await generateFlyer(player, game, {
           publicBaseUrl,
-          playerImage: input.photo,
+          playerImages: getPlayerImages(input),
           teamLogoImage: team.logo,
           imageGeneration,
         });

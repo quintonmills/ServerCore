@@ -7,7 +7,9 @@ import { createGeneratedJpegBuffer, createRasterImageDataUrl } from './rasterIma
 
 test('saves the complete OpenAI-generated flyer JPEG without local image composition', async () => {
   const referenceDataUrl = createRasterImageDataUrl('png');
+  const playerImages = [referenceDataUrl, referenceDataUrl, referenceDataUrl];
   const generatedFlyer = createGeneratedJpegBuffer();
+  let generatorOptions;
   const graphic = await generateFlyer(
     {
       id: '../p1',
@@ -26,9 +28,12 @@ test('saves the complete OpenAI-generated flyer JPEG without local image composi
     },
     {
       publicBaseUrl: 'https://scorekings-api.example.com/',
-      playerImage: referenceDataUrl,
+      playerImages,
       teamLogoImage: referenceDataUrl,
-      imageGenerator: async () => generatedFlyer,
+      imageGenerator: async (options) => {
+        generatorOptions = options;
+        return generatedFlyer;
+      },
     },
   );
 
@@ -42,6 +47,7 @@ test('saves the complete OpenAI-generated flyer JPEG without local image composi
       graphic.downloadUrl,
       /^https:\/\/scorekings-api\.example\.com\/api\/games\/flyers\/.*\/download$/,
     );
+    assert.deepEqual(generatorOptions.playerImages, playerImages);
   } finally {
     await unlink(graphic.filePath);
   }

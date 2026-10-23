@@ -24,7 +24,23 @@ test('game schema stores reference images and image-generation settings', () => 
         stl: 1,
         blk: 0,
         to: 2,
-        photo: 'data:image/jpeg;base64,aGVsbG8=',
+        photos: [
+          'data:image/jpeg;base64,aGVsbG8=',
+          'data:image/jpeg;base64,aGVsbG8=',
+          'data:image/jpeg;base64,aGVsbG8=',
+        ],
+      },
+      {
+        id: 'p2',
+        team: 'Team B',
+        jersey: '4',
+        name: 'Jordan',
+        pts: 0,
+        reb: 0,
+        ast: 0,
+        stl: 0,
+        blk: 0,
+        to: 0,
       },
     ],
     imageGeneration: {
@@ -36,6 +52,7 @@ test('game schema stores reference images and image-generation settings', () => 
 
   assert.equal(game.validateSync(), undefined);
   assert.equal(game.teamA.logo, 'data:image/png;base64,aGVsbG8=');
-  assert.equal(game.players[0].photo, 'data:image/jpeg;base64,aGVsbG8=');
+  assert.equal(game.players[0].photos.length, 3);
+  assert.equal(game.players[1].photos, undefined);
   assert.equal(game.imageGeneration.prompt, 'Arena spotlight');
 });

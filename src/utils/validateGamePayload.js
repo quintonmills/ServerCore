@@ -21,6 +21,7 @@ const playerFields = new Set([
   'blk',
   'to',
   'photo',
+  'photos',
 ]);
 const generationFields = new Set(['prompt', 'size', 'quality']);
 const maxGameDocumentBytes = 14 * 1024 * 1024;
@@ -86,6 +87,22 @@ function validatePlayer(player, path, errors) {
   checkString(player.jersey, `${path}.jersey`, errors, 10);
   checkString(player.name, `${path}.name`, errors, 200);
   checkImageDataUrl(player.photo, `${path}.photo`, errors);
+  if (player.photos !== undefined) {
+    if (!Array.isArray(player.photos) || player.photos.length !== 3) {
+      errors.push(`${path}.photos must contain exactly three image data URLs`);
+    } else {
+      player.photos.forEach((photo, index) => {
+        if (photo === undefined) {
+          errors.push(`${path}.photos[${index}] must be a PNG, JPEG, or WebP base64 data URL`);
+        } else {
+          checkImageDataUrl(photo, `${path}.photos[${index}]`, errors);
+        }
+      });
+    }
+    if (player.photo !== undefined) {
+      errors.push(`${path} must provide either photo or photos, not both`);
+    }
+  }
 
   if (player.team !== 'Team A' && player.team !== 'Team B') {
     errors.push(`${path}.team must be "Team A" or "Team B"`);

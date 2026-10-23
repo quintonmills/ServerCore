@@ -21,13 +21,15 @@ export async function generateFlyer(
   {
     publicBaseUrl,
     playerImage,
+    playerImages,
     teamLogoImage,
     imageGeneration,
     imageGenerator = generateFlyerImage,
   } = {},
 ) {
-  if (!playerImage || !teamLogoImage) {
-    throw new Error('A player photo and the player team logo are required to generate a flyer');
+  const references = playerImages || (playerImage ? [playerImage] : []);
+  if (references.length === 0 || !teamLogoImage) {
+    throw new Error('Player reference photos and the player team logo are required to generate a flyer');
   }
 
   await mkdir(outputDirectory, { recursive: true });
@@ -35,7 +37,8 @@ export async function generateFlyer(
   const flyerBuffer = await imageGenerator({
     player: playerData,
     game: gameData,
-    playerImage,
+    playerImages: references,
+    playerImage: references.length === 1 ? references[0] : undefined,
     teamLogoImage,
     imageGeneration,
   });

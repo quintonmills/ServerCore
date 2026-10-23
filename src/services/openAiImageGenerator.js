@@ -1,10 +1,23 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
+  InvalidImageAssetError,
   ImageGenerationError,
   validateGeneratedRasterImage,
   validateRasterImageDataUrl,
 } from '../utils/rasterImage.js';
 
 const apiUrl = 'https://api.openai.com/v1/images/edits';
+const defaultTemplatePath = fileURLToPath(
+  new URL('../../assets/flyer-style-reference.png', import.meta.url),
+);
+const templateMimeTypes = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+};
 
 function appendImage(form, image, filename) {
   form.append(
@@ -14,31 +27,51 @@ function appendImage(form, image, filename) {
   );
 }
 
-function buildPrompt(player, game, extraPrompt) {
+async function loadTemplateReference(templateImage) {
+  if (templateImage) {
+    return validateRasterImageDataUrl(templateImage, 'Flyer style reference');
+  }
+  const templatePath = process.env.FLYER_STYLE_REFERENCE_PATH || defaultTemplatePath;
+  const mimeType = templateMimeTypes[path.extname(templatePath).toLowerCase()];
+  if (!mimeType) {
+    throw new ImageGenerationError('The flyer style reference must be a PNG, JPEG, or WebP image.');
+  }
+  let buffer;
+  try {
+    buffer = await readFile(templatePath);
+  } catch {
+    throw new ImageGenerationError('The configured flyer style reference could not be read.');
+  }
+  try {
+    return validateRasterImageDataUrl(
+      `data:${mimeType};base64,${buffer.toString('base64')}`,
+      'Flyer style reference',
+    );
+  } catch (error) {
+    if (!(error instanceof InvalidImageAssetError)) throw error;
+    throw new ImageGenerationError('The configured flyer style reference is not a valid raster image.');
+  }
+}
+
+function buildPrompt(player, game, extraPrompt, playerImageCount) {
   const teamName = player.team === 'Team A' ? game.teamA.name : game.teamB.name;
-  const stats = [
-    `POINTS: ${player.pts}`,
-    `REBOUNDS: ${player.reb}`,
-    `ASSISTS: ${player.ast}`,
-    `STEALS: ${player.stl}`,
-    `BLOCKS: ${player.blk}`,
-    `TURNOVERS: ${player.to}`,
-  ];
   const instructions = [
-    'Generate one complete, finished basketball player stat flyer as a single portrait-format image, not a portrait to be placed in another template.',
-    'Use the first reference image as the player identity and preserve their recognizable face, skin tone, hair, and build.',
-    'Use the second reference image as the exact team logo reference. Reproduce the logo faithfully and do not invent another logo.',
-    'Show the player prominently in a dynamic, photorealistic basketball pose wearing a uniform inspired by the team colors.',
-    'Design a polished dark arena flyer with a near-black/navy background, high-contrast white type, restrained neon-lime accents, clean grid, generous spacing, and premium sports-poster art direction.',
-    'Compose the entire flyer: put SCOREKINGS at the top, PLAYER STAT CARD as the subtitle, the player name and jersey near the portrait, team name and team logo together, the location beneath the player details, a matchup footer with both team names and final scores, and six clearly separated stat boxes.',
-    `Player name, spelled exactly: ${player.name}. Jersey number: ${player.jersey}. Team: ${teamName}. Location: ${game.location}.`,
-    `Display these exact stat labels and values without changing, omitting, duplicating, or adding any numbers: ${stats.join('; ')}.`,
-    `Display the exact final matchup: ${game.teamA.name} ${game.teamA.score} - ${game.teamB.score} ${game.teamB.name}.`,
-    'Make all requested text large, legible, correctly spelled, and easy to read. Do not add any other statistics or factual claims. Do not crop text, the player, or the team logo.',
-    'Output only the finished flyer artwork with no mockup, no surrounding frame, no watermark, and no explanatory text.',
+    'Create one complete, original portrait-format basketball achievement flyer as finished artwork.',
+    'Reference image 1 is visual art-direction guidance only. Draw on broad qualities such as a light off-white paper field, gritty monochrome sports-editorial collage, tactile grain, layered torn-paper shapes, bold condensed typography, dramatic contrast, and a restrained team-color accent. Create a fresh composition; do not reproduce the reference layout, exact placement, wording, pictured athlete, uniform, logo, signature, slogans, or distinctive graphic marks.',
+    playerImageCount === 3
+      ? "Reference images 2, 3, and 4 show the same featured player from different views. Use each photo once to preserve the player's recognizable face, skin tone, hair, and build, and show that same player in three distinct depictions: one prominent dynamic full-body basketball pose and two smaller, lighter monochrome supporting cutouts integrated into the surrounding design. Do not substitute the athlete from the style reference or invent extra player depictions."
+      : 'Reference image 2 shows the featured player. Preserve their recognizable face, skin tone, hair, and build, and create one prominent dynamic basketball depiction with smaller supporting crops derived from this same player.',
+    `Reference image ${playerImageCount + 2} is the supplied team logo. Use it faithfully and derive the uniform/accent color palette from this logo, not from the visual reference.`,
+    `Feature the player in a uniform using the team colors. Player name, spelled exactly: ${player.name}. Jersey number: ${player.jersey}. Team name, spelled exactly: ${teamName}.`,
+    `Display the exact points total: ${player.pts} POINTS. This is the only statistic to include.`,
+    'Include only the player name, jersey number, team name, and points total as factual text. Do not add rebounds, assists, other statistics, location, opponents, scores, slogans, signatures, watermarks, or unprovided facts. Do not include brand marks other than the supplied team logo.',
+    'Use strong, readable typography with every requested word and number spelled and rendered exactly once. Keep the player and all required text fully inside the image.',
+    'Output only the finished flyer artwork with no mockup, external frame, or explanatory text.',
   ];
 
-  if (extraPrompt) instructions.push(`Additional art direction: ${extraPrompt}`);
+  if (extraPrompt) {
+    instructions.push(`Optional additional art direction, if compatible with the fixed player details and design constraints: ${extraPrompt}`);
+  }
   return instructions.join(' ');
 }
 
@@ -46,6 +79,8 @@ export async function generateFlyerImage({
   player,
   game,
   playerImage,
+  playerImages,
+  templateImage,
   teamLogoImage,
   imageGeneration = {},
   apiKey = process.env.OPENAI_API_KEY,
@@ -55,19 +90,30 @@ export async function generateFlyerImage({
     throw new ImageGenerationError('Image generation is not configured on the server.');
   }
 
-  const [playerReference, teamLogoReference] = await Promise.all([
-    validateRasterImageDataUrl(playerImage, 'Player photo'),
+  const suppliedPlayerImages = playerImages || (playerImage ? [playerImage] : []);
+  if (suppliedPlayerImages.length !== 1 && suppliedPlayerImages.length !== 3) {
+    throw new ImageGenerationError('Provide either one legacy player photo or exactly three player reference photos.');
+  }
+
+  const [playerReferences, teamLogoReference, templateReference] = await Promise.all([
+    Promise.all(suppliedPlayerImages.map((image, index) =>
+      validateRasterImageDataUrl(image, `Player photo ${index + 1}`),
+    )),
     validateRasterImageDataUrl(teamLogoImage, 'Team logo'),
+    loadTemplateReference(templateImage),
   ]);
 
   const form = new FormData();
   form.append('model', 'gpt-image-1');
-  form.append('prompt', buildPrompt(player, game, imageGeneration.prompt));
+  form.append('prompt', buildPrompt(player, game, imageGeneration.prompt, playerReferences.length));
   form.append('size', imageGeneration.size || '1024x1536');
   form.append('quality', imageGeneration.quality || 'high');
   form.append('input_fidelity', 'high');
   form.append('output_format', 'jpeg');
-  appendImage(form, playerReference, 'player-reference');
+  appendImage(form, templateReference, 'flyer-style-reference');
+  playerReferences.forEach((reference, index) => {
+    appendImage(form, reference, `player-reference-${index + 1}`);
+  });
   appendImage(form, teamLogoReference, 'team-logo-reference');
 
   let response;
