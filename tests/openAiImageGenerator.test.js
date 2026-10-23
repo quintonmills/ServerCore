@@ -69,7 +69,11 @@ test('sends the style reference, three player photos, team logo, and tailored de
   assert.match(form.get('prompt'), /subtle arena spotlight/);
   assert.match(form.get('prompt'), /one complete, original portrait-format basketball achievement flyer/);
   assert.match(form.get('prompt'), /visual art-direction guidance only/);
-  assert.match(form.get('prompt'), /three distinct depictions/);
+  assert.match(form.get('prompt'), /exactly three depictions of this player total/);
+  assert.match(form.get('prompt'), /exactly two smaller, lighter monochrome supporting photos placed around the flyer border/);
+  assert.match(form.get('prompt'), /flattering enough for a public team post/);
+  assert.match(form.get('prompt'), /avoid excessive retouching, artificial perfection/);
+  assert.match(form.get('prompt'), /Pay close attention to small details/);
   assert.match(form.get('prompt'), /14 POINTS/);
   assert.match(form.get('prompt'), /Do not add rebounds, assists, other statistics/);
   const references = form.getAll('image[]');
