@@ -28,6 +28,7 @@ The Docker image uses Node.js 22 on Debian Bookworm, installs locked production 
 | --- | --- |
 | `MONGODB_URI` | MongoDB Atlas connection string for the `scorekings` database |
 | `OPENAI_API_KEY` | Server-side OpenAI API key used for image generation |
+| `OPENAI_IMAGE_MODEL` | Image-edit model; defaults to `gpt-image-2.5-sunburst` |
 | `FLYER_STYLE_REFERENCE_PATH` | Optional path to a PNG, JPEG, or WebP image used as broad flyer art direction; defaults to the bundled reference |
 | `CORS_ORIGIN` | Comma-separated exact origins allowed to call the API, e.g. `https://scorekings.example.com,https://admin.example.com` |
 | `PUBLIC_BASE_URL` | The externally reachable HTTPS API origin, e.g. `https://scorekings-api.onrender.com` |
@@ -49,7 +50,7 @@ Expected response:
 {"status":"ok"}
 ```
 
-To verify game finalization, send a valid JSON payload to `POST /api/games/finalize`. It must include three player reference photos for the highest-ranked eligible scorer and a logo for that player's team. Images must be valid PNG, JPEG, or WebP data URLs no larger than 5 MB each; the complete payload must be at most 14 MB. The request also calls OpenAI, so configure `OPENAI_API_KEY` and ensure the account has access to `gpt-image-1`.
+To verify game finalization, send a valid JSON payload to `POST /api/games/finalize`. It must include one to three player reference photos for the highest-ranked eligible scorer and a logo for that player's team to generate a flyer. Images must be valid PNG, JPEG, or WebP data URLs no larger than 5 MB each; the complete payload must be at most 14 MB. The request also calls OpenAI, so configure `OPENAI_API_KEY`, verify the API organization if required, and ensure the key has access to the model configured with `OPENAI_IMAGE_MODEL` (defaults to `gpt-image-2.5-sunburst`).
 
 Example request shape (replace each image placeholder with a real base64 data URL):
 

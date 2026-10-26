@@ -59,7 +59,7 @@ test('sends the style reference, three player photos, team logo, and tailored de
   assert.equal(requestOptions.method, 'POST');
   assert.equal(requestOptions.headers.Authorization, 'Bearer test-key');
   const form = requestOptions.body;
-  assert.equal(form.get('model'), 'gpt-image-1');
+  assert.equal(form.get('model'), 'gpt-image-2.5-sunburst');
   assert.equal(form.get('size'), '1024x1024');
   assert.equal(form.get('quality'), 'medium');
   assert.equal(form.get('input_fidelity'), 'high');

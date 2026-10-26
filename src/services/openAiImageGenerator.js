@@ -9,6 +9,7 @@ import {
 } from '../utils/rasterImage.js';
 
 const apiUrl = 'https://api.openai.com/v1/images/edits';
+const defaultImageModel = 'gpt-image-2.5-sunburst';
 const defaultTemplatePath = fileURLToPath(
   new URL('../../assets/flyer-style-reference.png', import.meta.url),
 );
@@ -106,7 +107,7 @@ export async function generateFlyerImage({
   ]);
 
   const form = new FormData();
-  form.append('model', 'gpt-image-1');
+  form.append('model', process.env.OPENAI_IMAGE_MODEL || defaultImageModel);
   form.append('prompt', buildPrompt(player, game, imageGeneration.prompt, playerReferences.length));
   form.append('size', imageGeneration.size || '1024x1536');
   form.append('quality', imageGeneration.quality || 'high');
