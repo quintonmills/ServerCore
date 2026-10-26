@@ -114,8 +114,8 @@ test('reports OpenAI API failures and missing generated image content', async ()
       fetchImplementation: async () => ({
         ok: false,
         status: 429,
-        async text() {
-          return 'rate limited';
+        async json() {
+          return { error: { type: 'rate_limit_error', message: 'rate limited' } };
         },
       }),
     }),
@@ -145,6 +145,52 @@ test('reports OpenAI API failures and missing generated image content', async ()
     }),
     /image-generation service could not create a valid flyer image/,
   );
+});
+
+test('logs concise provider details for rejected image-generation requests', async () => {
+  const playerImage = createRasterImageDataUrl('jpeg');
+  const teamLogoImage = createRasterImageDataUrl('png');
+  const loggedErrors = [];
+  const originalConsoleError = console.error;
+  console.error = (...args) => loggedErrors.push(args);
+
+  try {
+    await assert.rejects(
+      generateFlyerImage({
+        player: { name: 'Marcus', jersey: '3', team: 'Team A', pts: 14, reb: 5, ast: 3 },
+        game: { teamA: { name: 'Red Team' }, teamB: { name: 'Blue Team' } },
+        playerImage,
+        teamLogoImage,
+        apiKey: 'test-key',
+        fetchImplementation: async () => ({
+          ok: false,
+          status: 400,
+          async json() {
+            return {
+              error: {
+                type: 'invalid_request_error',
+                code: 'unsupported_value',
+                message: 'Invalid image dimensions',
+              },
+            };
+          },
+        }),
+      }),
+      /image-generation service returned HTTP 400/,
+    );
+  } finally {
+    console.error = originalConsoleError;
+  }
+
+  assert.deepEqual(loggedErrors, [[
+    '[openai] Image generation request failed',
+    {
+      status: 400,
+      type: 'invalid_request_error',
+      code: 'unsupported_value',
+      message: 'Invalid image dimensions',
+    },
+  ]]);
 });
 
 test('sends valid legacy player, style, and team references to the image-edit endpoint', async () => {

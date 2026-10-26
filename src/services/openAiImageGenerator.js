@@ -129,6 +129,25 @@ export async function generateFlyerImage({
     throw new ImageGenerationError();
   }
   if (!response.ok) {
+    let errorBody;
+    try {
+      errorBody = await response.json();
+    } catch {
+      console.error('[openai] Could not parse the image-generation error response', {
+        status: response.status,
+      });
+    }
+    const providerError = errorBody?.error;
+    const providerMessage =
+      typeof providerError?.message === 'string'
+        ? providerError.message.replace(/[\r\n]+/g, ' ').slice(0, 500)
+        : undefined;
+    console.error('[openai] Image generation request failed', {
+      status: response.status,
+      ...(typeof providerError?.type === 'string' ? { type: providerError.type } : {}),
+      ...(typeof providerError?.code === 'string' ? { code: providerError.code } : {}),
+      ...(providerMessage ? { message: providerMessage } : {}),
+    });
     throw new ImageGenerationError(
       `The image-generation service returned HTTP ${response.status}.`,
     );
