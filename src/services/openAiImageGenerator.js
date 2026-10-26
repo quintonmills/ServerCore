@@ -111,7 +111,6 @@ export async function generateFlyerImage({
   form.append('prompt', buildPrompt(player, game, imageGeneration.prompt, playerReferences.length));
   form.append('size', imageGeneration.size || '1024x1536');
   form.append('quality', imageGeneration.quality || 'high');
-  form.append('input_fidelity', 'high');
   form.append('output_format', 'jpeg');
   appendImage(form, templateReference, 'flyer-style-reference');
   playerReferences.forEach((reference, index) => {

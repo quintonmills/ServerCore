@@ -62,7 +62,7 @@ test('sends the style reference, three player photos, team logo, and tailored de
   assert.equal(form.get('model'), 'gpt-image-2.5-sunburst');
   assert.equal(form.get('size'), '1024x1024');
   assert.equal(form.get('quality'), 'medium');
-  assert.equal(form.get('input_fidelity'), 'high');
+  assert.equal(form.has('input_fidelity'), false);
   assert.equal(form.get('output_format'), 'jpeg');
   assert.match(form.get('prompt'), /Marcus/);
   assert.match(form.get('prompt'), /Red Team/);
