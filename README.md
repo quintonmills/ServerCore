@@ -27,13 +27,13 @@ Set the values in `.env`:
 | `PUBLIC_BASE_URL` | Base URL used in returned graphic links | `http://localhost:<PORT>` |
 | `OPENAI_API_KEY` | API key used to generate player portraits with OpenAI | Required for flyer generation |
 
-For a local MongoDB instance using Docker:
+For a MongoDB Atlas deployment, set `MONGODB_URI` to the Atlas connection string provided for your cluster. Keep credentials in the environment file or deployment secret store, not in source control. For a local MongoDB instance using Docker:
 
 ```sh
 docker run --name scorekings-mongo -p 27017:27017 -d mongo:8
 ```
 
-The `.env.example` URI connects to that local instance. Start the API after MongoDB is available:
+For local development, set `MONGODB_URI=mongodb://127.0.0.1:27017/scorekings`. Start the API after MongoDB is available:
 
 ```sh
 npm start
@@ -66,11 +66,13 @@ The server waits for a successful MongoDB connection before it starts accepting 
   "gameId": "game-101",
   "location": "Marietta Rec League",
   "teamA": {
+    "teamId": "red-team",
     "name": "Red Team",
     "score": 24,
     "logo": "data:image/png;base64,<base64-encoded-team-logo>"
   },
   "teamB": {
+    "teamId": "blue-team",
     "name": "Blue Team",
     "score": 18,
     "logo": "data:image/png;base64,<base64-encoded-team-logo>"
@@ -94,6 +96,34 @@ The server waits for a successful MongoDB connection before it starts accepting 
       ]
     }
   ],
+  "status": "COMPLETED",
+  "startedAt": "2026-10-21T11:00:00.000Z",
+  "completedAt": "2026-10-21T12:00:00.000Z",
+  "boxScore": [
+    {
+      "playerId": "p1",
+      "firstName": "Marcus",
+      "lastName": "Example",
+      "teamId": "red-team",
+      "jersey": "3",
+      "PTS": 14,
+      "REB": 5,
+      "AST": 3,
+      "STL": 1,
+      "BLK": 0,
+      "TOV": 2
+    }
+  ],
+  "events": [
+    {
+      "type": "shot_made",
+      "period": 1,
+      "clock": "10:32",
+      "playerId": "p1",
+      "teamId": "red-team",
+      "points": 2
+    }
+  ],
   "imageGeneration": {
     "prompt": "Add a subtle arena spotlight",
     "size": "1024x1536",
@@ -102,13 +132,14 @@ The server waits for a successful MongoDB connection before it starts accepting 
 }
 ```
 
-`photos` contains exactly three reference images of the same player; `logo` is the reference logo for that player's team. Supply PNG, JPEG, or WebP image data URLs, each no larger than 5 MB. Three photos and the team logo are required for the highest-ranked eligible scorer (at least one point). The existing singular `photo` field remains accepted for older clients. `imageGeneration` is optional: `prompt` adds compatible art direction, `size` accepts `1024x1024`, `1024x1536`, `1536x1024`, or `auto`, and `quality` accepts `low`, `medium`, `high`, or `auto`. Defaults are `1024x1536` and `high`. Uploaded player photos, team logos, and image-generation settings are saved with the game in MongoDB; the API limits the complete stored game payload to 14 MB to stay safely below MongoDB's 16 MB document limit. Image data is omitted from the response to keep it small.
+The frontend may send one to three `photos` for the top-ranked scorer and may omit player photos or team `logo` assets. Supply PNG, JPEG, or WebP image data URLs, each no larger than 5 MB. When the selected player has one to three photos and their team has a logo, the API generates a flyer; otherwise it still persists the game and returns an empty `graphics` array. The existing singular `photo` field remains accepted for older clients. `boxScore` is optional; when omitted, player stats are used to build it. `events` is an optional array of play-by-play objects, and box-score entries can provide uppercase or lowercase stat keys. `teamId` values identify corresponding Team and Player records. `imageGeneration` is optional: `prompt` adds compatible art direction, `size` accepts `1024x1024`, `1024x1536`, `1536x1024`, or `auto`, and `quality` accepts `low`, `medium`, `high`, or `auto`. Defaults are `1024x1536` and `high`. Uploaded player photos, team logos, and image-generation settings are saved with the game in MongoDB; the API limits the complete stored game payload to 14 MB to stay safely below MongoDB's 16 MB document limit. Image data is omitted from the response to keep it small.
 
 The API returns `200 OK` with the upserted game and exactly one generated flyer. The `game` includes Mongoose timestamps, and the graphic has its player's ID and name, its generated file path, a public preview URL, and a stable download URL:
 
 ```json
 {
   "game": {
+    "_id": "671000000000000000000001",
     "gameId": "game-101",
     "location": "Marietta Rec League",
     "teamA": { "name": "Red Team", "score": 24 },
@@ -127,6 +158,25 @@ The API returns `200 OK` with the upserted game and exactly one generated flyer.
         "to": 2
       }
     ],
+    "teams": {
+      "home": { "teamId": "red-team", "name": "Red Team", "score": 24 },
+      "away": { "teamId": "blue-team", "name": "Blue Team", "score": 18 }
+    },
+    "status": "completed",
+    "boxScore": [
+      { "playerId": "p1", "PTS": 14, "REB": 5, "AST": 3 }
+    ],
+    "events": [
+      { "type": "shot_made", "period": 1, "playerId": "p1", "points": 2 }
+    ],
+    "generatedMedia": [
+      {
+        "type": "flyer",
+        "playerId": "p1",
+        "publicUrl": "https://scorekings-api.example.com/output/game-101-p1-<unique-id>.jpg",
+        "downloadUrl": "https://scorekings-api.example.com/api/games/flyers/game-101-p1-<unique-id>.jpg/download"
+      }
+    ],
     "createdAt": "2026-10-21T12:00:00.000Z",
     "updatedAt": "2026-10-21T12:00:00.000Z"
   },
@@ -142,9 +192,9 @@ The API returns `200 OK` with the upserted game and exactly one generated flyer.
 }
 ```
 
-`publicUrl` previews the JPEG. `downloadUrl` is a QR-code-friendly HTTPS endpoint that serves the same JPEG with `Content-Disposition: attachment`; it does not expire while the flyer remains in storage. Configure `PUBLIC_BASE_URL` as the externally reachable HTTPS API origin and use durable storage for `output/` so downloads remain available after restarts and redeployments. If no player has at least one point, finalization returns a `400` `VALIDATION_ERROR` instead of succeeding without a flyer.
+`publicUrl` previews the JPEG. `downloadUrl` is a QR-code-friendly HTTPS endpoint that serves the same JPEG with `Content-Disposition: attachment`; it does not expire while the flyer remains in storage. Configure `PUBLIC_BASE_URL` as the externally reachable HTTPS API origin and use durable storage for `output/` so downloads remain available after restarts and redeployments. If no player has at least one point, or required flyer assets are missing, finalization still saves the game and returns an empty `graphics` array.
 
-Every valid finalization uses `gameId` as an upsert key: sending it again updates that game rather than creating a duplicate, and regenerates its cards. A unique MongoDB index enforces this behavior. The response is `200 OK` for both first and repeated finalizations.
+Every valid finalization uses `gameId` as an upsert key: sending it again updates that game rather than creating a duplicate, and regenerates its cards. A unique MongoDB index enforces this behavior. Career totals use atomic `$inc` updates and track applied game IDs so retries do not count a game's box score twice. Team and player records are upserted when team/player IDs are supplied. The response is `200 OK` for both first and repeated finalizations.
 
 Input is validated before persistence or rendering. Invalid fields, unexpected keys (including filesystem paths), unsupported player teams, non-numeric or negative scores/stats, and malformed JSON return a `400` JSON error. For example:
 
@@ -162,7 +212,7 @@ If persistence or rendering fails, the API returns an error and never reports su
 
 ## Stat cards
 
-For the top-ranked eligible scorer, the API sends the bundled `assets/flyer-style-reference.png`, up to three player photos, the player's team logo, player identity, points total, and optional art direction to OpenAI's `gpt-image-1` image-edit endpoint. The template is used only for broad visual direction (gritty monochrome collage, textured paper, bold type, and a team-color accent); the prompt asks for an original composition and excludes the reference's wording, pictured subject, logos, signature, and distinctive arrangement. Player photos provide the three views of the same athlete, while name, jersey, team, and points are the only player facts requested in the generated copy. Ranking remains points, rebounds, then assists, descending; ties retain incoming player order. OpenAI generates the complete flyer image, which the backend saves directly without local image composition. Uploaded player photos and team logos are saved with the game in MongoDB; generated JPEGs are written to `output/` (ignored by git) and served at `/output/<filename>` for preview and `/api/games/flyers/<filename>/download` as an attachment. Set `FLYER_STYLE_REFERENCE_PATH` to use a different PNG/JPEG/WebP style reference at runtime, and set `PUBLIC_BASE_URL` to the externally reachable HTTPS API origin.
+For the top-ranked eligible scorer, when one to three player photos and their team logo are available, the API sends the bundled `assets/flyer-style-reference.png`, the player photos, team logo, player identity, points total, and optional art direction to OpenAI's `gpt-image-1` image-edit endpoint. The template is used only for broad visual direction (gritty monochrome collage, textured paper, bold type, and a team-color accent); the prompt asks for an original composition and excludes the reference's wording, pictured subject, logos, signature, and distinctive arrangement. Player photos provide views of the same athlete, while name, jersey, team, and points are the only player facts requested in the generated copy. Ranking remains points, rebounds, then assists, descending; ties retain incoming player order. OpenAI generates the complete flyer image, which the backend saves directly without local image composition. Uploaded player photos and team logos are saved with the game in MongoDB; generated JPEGs are written to `output/` (ignored by git) and served at `/output/<filename>` for preview and `/api/games/flyers/<filename>/download` as an attachment. Flyer URLs are also appended to the game's `generatedMedia` array after image generation succeeds. Set `FLYER_STYLE_REFERENCE_PATH` to use a different PNG/JPEG/WebP style reference at runtime, and set `PUBLIC_BASE_URL` to the externally reachable HTTPS API origin.
 
 Because the full flyer typography and logo placement are generated by an image model, text, statistics, and logos may not render perfectly every time. Review generated flyers before sharing them when exact typography or score accuracy is essential.
 

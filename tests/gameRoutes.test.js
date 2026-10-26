@@ -14,8 +14,8 @@ const outputDirectory = fileURLToPath(new URL('../output/', import.meta.url));
 const payload = {
   gameId: 'game-101',
   location: 'Marietta Rec League',
-  teamA: { name: 'Red Team', score: 24, logo: pngDataUrl },
-  teamB: { name: 'Blue Team', score: 18 },
+  teamA: { teamId: 'red-team', name: 'Red Team', score: 24, logo: pngDataUrl },
+  teamB: { teamId: 'blue-team', name: 'Blue Team', score: 18 },
   imageGeneration: { prompt: 'arena spotlight', quality: 'medium' },
   players: [
     {
@@ -32,7 +32,32 @@ const payload = {
       photos: [pngDataUrl, pngDataUrl, pngDataUrl],
     },
   ],
+  boxScore: [
+    {
+      playerId: 'p1',
+      firstName: 'Marcus',
+      jersey: '3',
+      PTS: 14,
+      REB: 5,
+      AST: 3,
+      STL: 1,
+      BLK: 0,
+      TOV: 2,
+    },
+  ],
+  events: [{ type: 'shot_made', period: 1, playerId: 'p1', points: 2 }],
 };
+
+function createTestApp(options = {}) {
+  return createApp({
+    PlayerModel: {
+      async findOneAndUpdate() {},
+      async exists() { return null; },
+    },
+    TeamModel: { async findOneAndUpdate() {} },
+    ...options,
+  });
+}
 
 async function withServer(app, run) {
   const server = createServer(app);
@@ -49,13 +74,22 @@ async function withServer(app, run) {
 
 test('finalize persists the supplied game ID and returns generated graphics', async () => {
   let savedPayload;
+  let savedGame;
   let renderCalls = 0;
+  const statUpdates = [];
+  const teamUpdates = [];
   const filename = `game-101-p2-${randomUUID()}.jpg`;
   const flyerBuffer = createGeneratedJpegBuffer();
   const flyerPath = path.join(outputDirectory, filename);
   const multiPlayerPayload = {
     ...payload,
     teamB: { ...payload.teamB, logo: pngDataUrl },
+    boxScore: [
+      ...payload.boxScore,
+      { playerId: 'p2', firstName: 'Alex', PTS: 18 },
+      { playerId: 'p3', firstName: 'Jordan', PTS: 14, REB: 8 },
+    ],
+    events: [...payload.events, { type: 'rebound', period: 2, playerId: 'p3' }],
     players: [
       ...payload.players,
       {
@@ -77,13 +111,30 @@ test('finalize persists the supplied game ID and returns generated graphics', as
   };
   const GameModel = {
     async findOneAndUpdate(filter, update) {
+      if (update.$push) {
+        savedGame.generatedMedia.push(update.$push.generatedMedia);
+        return savedGame;
+      }
       savedPayload = update.$set;
       assert.deepEqual(filter, { gameId: 'game-101' });
-      return { ...savedPayload, createdAt: new Date('2026-01-01T00:00:00.000Z') };
+      savedGame = {
+        ...savedPayload,
+        _id: 'mongo-game-id',
+        generatedMedia: [],
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      };
+      return savedGame;
     },
   };
-  const app = createApp({
+  const app = createTestApp({
     GameModel,
+    PlayerModel: {
+      async findOneAndUpdate(filter, update) { statUpdates.push({ filter, update }); },
+      async exists() { return null; },
+    },
+    TeamModel: {
+      async findOneAndUpdate(filter, update) { teamUpdates.push({ filter, update }); },
+    },
     publicBaseUrl: 'https://scorekings-api.example.com',
     flyerGenerator: async (player, game, options) => {
       renderCalls += 1;
@@ -111,6 +162,10 @@ test('finalize persists the supplied game ID and returns generated graphics', as
 
       assert.equal(response.status, 200);
       assert.equal(body.game.gameId, 'game-101');
+      assert.equal(body.game._id, 'mongo-game-id');
+      assert.equal(body.game.events.length, 2);
+      assert.equal(body.game.boxScore.length, 3);
+      assert.equal(body.game.generatedMedia[0].publicUrl, body.graphics[0].publicUrl);
       assert.equal(body.graphics.length, 1);
       assert.equal(body.graphics[0].playerId, 'p2');
       assert.equal(body.graphics[0].publicUrl, `https://scorekings-api.example.com/output/${filename}`);
@@ -119,6 +174,15 @@ test('finalize persists the supplied game ID and returns generated graphics', as
         `https://scorekings-api.example.com/api/games/flyers/${filename}/download`,
       );
       assert.equal(savedPayload.gameId, 'game-101');
+      assert.equal(savedPayload.status, 'completed');
+      assert.equal(savedPayload.boxScore[0].PTS, 14);
+      assert.equal(savedPayload.events.length, 2);
+      assert.equal(statUpdates.length, 3);
+      assert.equal(statUpdates[0].filter.appliedGameIds.$ne, 'game-101');
+      assert.equal(statUpdates[0].update.$inc['careerStats.PTS'], 14);
+      assert.equal(statUpdates[0].update.$set.teamId, 'red-team');
+      assert.equal(teamUpdates.length, 2);
+      assert.equal(savedPayload.teams.home.teamId, 'red-team');
       assert.deepEqual(savedPayload.players[0].photos, multiPlayerPayload.players[0].photos);
       assert.equal(savedPayload.teamA.logo, multiPlayerPayload.teamA.logo);
       assert.deepEqual(savedPayload.imageGeneration, {
@@ -145,7 +209,7 @@ test('finalize persists the supplied game ID and returns generated graphics', as
 
 test('invalid payload returns a consistent 400 response without persistence', async () => {
   let saveCalls = 0;
-  const app = createApp({
+  const app = createTestApp({
     GameModel: {
       async findOneAndUpdate() {
         saveCalls += 1;
@@ -171,15 +235,20 @@ test('invalid payload returns a consistent 400 response without persistence', as
   });
 });
 
-test('selected scorer must include reference photos and their team must include a logo', async () => {
-  let saveCalls = 0;
+test('persists game history when optional flyer photos or team logos are not supplied', async () => {
+  let savedPayload;
   const incompletePayload = structuredClone(payload);
+  delete incompletePayload.boxScore;
+  incompletePayload.status = 'COMPLETED';
+  incompletePayload.startedAt = '2026-10-26T12:00:00.000Z';
+  incompletePayload.completedAt = '2026-10-26T13:00:00.000Z';
   delete incompletePayload.players[0].photos;
   delete incompletePayload.teamA.logo;
-  const app = createApp({
+  const app = createTestApp({
     GameModel: {
-      async findOneAndUpdate() {
-        saveCalls += 1;
+      async findOneAndUpdate(_filter, update) {
+        savedPayload = update.$set;
+        return { ...savedPayload, _id: 'saved-without-flyer', generatedMedia: [] };
       },
     },
     flyerGenerator: async () => {
@@ -195,11 +264,16 @@ test('selected scorer must include reference photos and their team must include 
     });
     const body = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.equal(body.error.code, 'VALIDATION_ERROR');
-    assert.ok(body.error.details.some((detail) => detail.includes('.photos is required')));
-    assert.ok(body.error.details.some((detail) => detail.includes('teamA.logo is required')));
-    assert.equal(saveCalls, 0);
+    assert.equal(response.status, 200);
+    assert.equal(body.game._id, 'saved-without-flyer');
+    assert.deepEqual(body.graphics, []);
+    assert.equal(savedPayload.players[0].photos, undefined);
+    assert.equal(savedPayload.status, 'COMPLETED');
+    assert.equal(savedPayload.startedAt, incompletePayload.startedAt);
+    assert.equal(savedPayload.completedAt, incompletePayload.completedAt);
+    assert.equal(savedPayload.boxScore[0].playerId, 'p1');
+    assert.equal(savedPayload.boxScore[0].PTS, 14);
+    assert.equal(savedPayload.events.length, 1);
   });
 });
 
@@ -207,7 +281,7 @@ test('rejects an invalid raster asset with a clear JSON error before persistence
   let saveCalls = 0;
   const invalidPayload = structuredClone(payload);
   invalidPayload.players[0].photos[0] = 'data:image/png;base64,aGVsbG8=';
-  const app = createApp({
+  const app = createTestApp({
     GameModel: {
       async findOneAndUpdate() {
         saveCalls += 1;
@@ -234,7 +308,7 @@ test('rejects an invalid raster asset with a clear JSON error before persistence
 });
 
 test('returns a clear gateway error when image generation fails', async () => {
-  const app = createApp({
+  const app = createTestApp({
     GameModel: {
       async findOneAndUpdate(_filter, update) {
         return update.$set;
@@ -261,16 +335,17 @@ test('returns a clear gateway error when image generation fails', async () => {
   });
 });
 
-test('a game without an eligible scorer returns a validation error without persistence', async () => {
+test('persists games without an eligible flyer scorer', async () => {
   let saveCalls = 0;
   const noEligibleScorer = {
     ...payload,
     players: [{ ...payload.players[0], pts: 0 }],
   };
-  const app = createApp({
+  const app = createTestApp({
     GameModel: {
-      async findOneAndUpdate() {
+      async findOneAndUpdate(_filter, update) {
         saveCalls += 1;
+        return { ...update.$set, _id: 'saved-without-scorer', generatedMedia: [] };
       },
     },
     flyerGenerator: async () => {
@@ -286,16 +361,16 @@ test('a game without an eligible scorer returns a validation error without persi
     });
     const body = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.equal(body.error.code, 'VALIDATION_ERROR');
-    assert.match(body.error.message, /at least one player/i);
-    assert.equal(saveCalls, 0);
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.graphics, []);
+    assert.equal(body.game.gameId, 'game-101');
+    assert.equal(saveCalls, 1);
   });
 });
 
 test('rendering failure returns an error and does not report a generated graphic', async () => {
   let renderCalls = 0;
-  const app = createApp({
+  const app = createTestApp({
     GameModel: {
       async findOneAndUpdate() {
         return payload;
@@ -322,7 +397,7 @@ test('rendering failure returns an error and does not report a generated graphic
 });
 
 test('health endpoint is available without a database', async () => {
-  const app = createApp();
+  const app = createTestApp();
   await withServer(app, async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/health`);
     assert.equal(response.status, 200);
@@ -337,7 +412,7 @@ test('health endpoint is available without a database', async () => {
 });
 
 test('CORS allows each configured frontend origin and omits headers for other origins', async () => {
-  const app = createApp({
+  const app = createTestApp({
     corsOrigin: 'https://scorekings.example.com, https://admin.example.com',
   });
   await withServer(app, async (baseUrl) => {
@@ -356,7 +431,7 @@ test('CORS allows each configured frontend origin and omits headers for other or
 });
 
 test('malformed JSON returns a 400 JSON error envelope', async () => {
-  const app = createApp();
+  const app = createTestApp();
   await withServer(app, async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/games/finalize`, {
       method: 'POST',

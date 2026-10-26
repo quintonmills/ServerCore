@@ -1,4 +1,5 @@
 import { unlink } from 'node:fs/promises';
+import { normalizePlayerStats } from '../utils/playerStats.js';
 import { selectPlayersForCards } from '../services/selectPlayersForCards.js';
 import { validateRasterImageDataUrl } from '../utils/rasterImage.js';
 import { validateGamePayload } from '../utils/validateGamePayload.js';
@@ -47,7 +48,83 @@ async function saveFinalizedGame(GameModel, payload) {
   }
 }
 
-export function createGameController({ GameModel, generateFlyer, publicBaseUrl }) {
+function getCanonicalBoxScore(payload) {
+  const source = payload.boxScore || payload.players;
+  return source.map((player) => {
+    const playerId = player.playerId || player.id;
+    const legacyPlayer = payload.players.find((entry) => (entry.playerId || entry.id) === playerId);
+    const homeTeam = payload.teams?.home || payload.teamA;
+    const awayTeam = payload.teams?.away || payload.teamB;
+    const team = player.team === 'Team B' || legacyPlayer?.team === 'Team B'
+      ? awayTeam
+      : homeTeam;
+    const [fallbackFirstName, ...fallbackLastName] = (player.name || legacyPlayer?.name || '').split(' ');
+    return {
+      playerId,
+      firstName: player.firstName || legacyPlayer?.firstName || fallbackFirstName || playerId,
+      lastName: player.lastName || legacyPlayer?.lastName || fallbackLastName.join(' '),
+      name: player.name || legacyPlayer?.name,
+      jersey: player.jersey || legacyPlayer?.jersey,
+      teamId: player.teamId || legacyPlayer?.teamId || team.teamId,
+      ...normalizePlayerStats(player),
+    };
+  });
+}
+
+async function updateCareerStats(PlayerModel, boxScore, gameId) {
+  for (const player of boxScore) {
+    const stats = normalizePlayerStats(player);
+    const increment = Object.fromEntries(
+      Object.entries(stats).map(([stat, value]) => [`careerStats.${stat}`, value]),
+    );
+    try {
+      await PlayerModel.findOneAndUpdate(
+        { playerId: player.playerId, appliedGameIds: { $ne: gameId } },
+        {
+          $set: {
+            firstName: player.firstName,
+            lastName: player.lastName,
+            ...(player.jersey ? { jersey: player.jersey } : {}),
+            ...(player.teamId ? { teamId: player.teamId } : {}),
+          },
+          $setOnInsert: { playerId: player.playerId },
+          $inc: increment,
+          $addToSet: { appliedGameIds: gameId },
+        },
+        { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+      );
+    } catch (error) {
+      if (!isDuplicateKeyError(error)) throw error;
+      const alreadyApplied = await PlayerModel.exists({
+        playerId: player.playerId,
+        appliedGameIds: gameId,
+      });
+      if (!alreadyApplied) throw error;
+    }
+  }
+}
+
+async function updateTeams(TeamModel, payload) {
+  for (const team of [
+    payload.teams?.home || payload.teamA,
+    payload.teams?.away || payload.teamB,
+  ]) {
+    if (!team.teamId) continue;
+    await TeamModel.findOneAndUpdate(
+      { teamId: team.teamId },
+      { $set: { name: team.name, ...(team.logoUrl ? { logoUrl: team.logoUrl } : {}) } },
+      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+    );
+  }
+}
+
+export function createGameController({
+  GameModel,
+  PlayerModel,
+  TeamModel,
+  generateFlyer,
+  publicBaseUrl,
+}) {
   return async function finalizeGame(request, response, next) {
     const errors = validateGamePayload(request.body);
     if (errors.length > 0) {
@@ -62,42 +139,15 @@ export function createGameController({ GameModel, generateFlyer, publicBaseUrl }
       return;
     }
 
-    const players = selectPlayersForCards(request.body.players).slice(0, 1);
-    if (players.length === 0) {
-      response.status(400).json({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'At least one player with one or more points is required to generate a flyer',
-          details: ['players must include at least one player with one or more points'],
-        },
-      });
-      return;
-    }
+    const selectedPlayers = selectPlayersForCards(request.body.players).slice(0, 1);
 
     const playerInputs = new Map(request.body.players.map((player) => [player.id, player]));
-    const assetErrors = [];
-    for (const player of players) {
+    const players = selectedPlayers.filter((player) => {
       const input = playerInputs.get(player.id);
       const team = player.team === 'Team A' ? request.body.teamA : request.body.teamB;
-      if (getPlayerImages(input).length === 0) {
-        assetErrors.push(`players[id=${player.id}].photos is required to generate a flyer`);
-      }
-      if (!team.logo) {
-        assetErrors.push(
-          `${player.team === 'Team A' ? 'teamA' : 'teamB'}.logo is required to generate this player's flyer`,
-        );
-      }
-    }
-    if (assetErrors.length > 0) {
-      response.status(400).json({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Player photos and team logos are required for flyer generation',
-          details: assetErrors,
-        },
-      });
-      return;
-    }
+      const imageCount = getPlayerImages(input).length;
+      return (imageCount === 1 || imageCount === 2 || imageCount === 3) && Boolean(team.logo);
+    });
 
     const suppliedImageGeneration = request.body.imageGeneration || {};
     const imageGeneration = {
@@ -105,7 +155,28 @@ export function createGameController({ GameModel, generateFlyer, publicBaseUrl }
       size: suppliedImageGeneration.size || '1024x1536',
       quality: suppliedImageGeneration.quality || 'high',
     };
-    const gamePayload = { ...request.body, imageGeneration };
+    const boxScore = getCanonicalBoxScore(request.body);
+    const homeTeam = request.body.teams?.home || request.body.teamA;
+    const awayTeam = request.body.teams?.away || request.body.teamB;
+    const gamePayload = {
+      ...request.body,
+      status: request.body.status || 'completed',
+      teams: {
+        home: {
+          teamId: homeTeam.teamId,
+          name: homeTeam.name,
+          score: homeTeam.score,
+        },
+        away: {
+          teamId: awayTeam.teamId,
+          name: awayTeam.name,
+          score: awayTeam.score,
+        },
+      },
+      boxScore,
+      events: request.body.events || [],
+      imageGeneration,
+    };
 
     const generated = [];
     try {
@@ -118,17 +189,20 @@ export function createGameController({ GameModel, generateFlyer, publicBaseUrl }
             ...getPlayerImages(input).map((image, index) =>
               validateRasterImageDataUrl(image, `Player ${player.id} photo ${index + 1}`),
             ),
-            validateRasterImageDataUrl(team.logo, teamName),
+            ...(team.logo ? [validateRasterImageDataUrl(team.logo, teamName)] : []),
           ];
         }),
       );
 
-      const game = await saveFinalizedGame(GameModel, gamePayload);
+      let finalizedGame = await saveFinalizedGame(GameModel, gamePayload);
+      if (!finalizedGame) throw new Error('The finalized game could not be saved');
+      await updateTeams(TeamModel, request.body);
+      await updateCareerStats(PlayerModel, boxScore, gamePayload.gameId);
 
       for (const player of players) {
         const input = playerInputs.get(player.id);
         const team = player.team === 'Team A' ? request.body.teamA : request.body.teamB;
-        const graphic = await generateFlyer(player, game, {
+        const graphic = await generateFlyer(player, finalizedGame, {
           publicBaseUrl,
           playerImages: getPlayerImages(input),
           teamLogoImage: team.logo,
@@ -139,9 +213,24 @@ export function createGameController({ GameModel, generateFlyer, publicBaseUrl }
           playerName: player.name,
           ...graphic,
         });
+        finalizedGame = await GameModel.findOneAndUpdate(
+          { gameId: gamePayload.gameId },
+          {
+            $push: {
+              generatedMedia: {
+                type: 'flyer',
+                playerId: player.id,
+                publicUrl: graphic.publicUrl,
+                downloadUrl: graphic.downloadUrl,
+              },
+            },
+          },
+          { new: true, runValidators: true },
+        );
+        if (!finalizedGame) throw new Error('The finalized game could not be updated with generated media');
       }
 
-      response.status(200).json({ game: omitStoredImages(game), graphics: generated });
+      response.status(200).json({ game: omitStoredImages(finalizedGame), graphics: generated });
     } catch (error) {
       const cleanupResults = await Promise.allSettled(
         generated.map((graphic) => unlink(graphic.filePath)),

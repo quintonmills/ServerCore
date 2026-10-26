@@ -28,6 +28,36 @@ test('accepts the frontend game-finalization payload without quarter, clock, or 
   assert.deepEqual(validateGamePayload(validPayload), []);
 });
 
+test('accepts game history fields and nested or flattened box-score metrics', () => {
+  const payload = structuredClone(validPayload);
+  payload.status = 'completed';
+  payload.startedAt = '2026-10-26T12:00:00.000Z';
+  payload.completedAt = '2026-10-26T13:00:00.000Z';
+  payload.events = [{ type: 'shot_made', period: 1, playerId: 'p1' }];
+  payload.teams = {
+    home: { teamId: 'team-a', name: 'Red Team', score: 24 },
+    away: { teamId: 'team-b', name: 'Blue Team', score: 18 },
+  };
+  payload.boxScore = [
+    { playerId: 'p1', teamId: 'team-a', stats: { PTS: 14, PLUS_MINUS: -2 } },
+    { playerId: 'p2', PTS: 8, REB: 4, AST: 2 },
+  ];
+
+  assert.deepEqual(validateGamePayload(payload), []);
+});
+
+test('rejects malformed play-by-play entries, timestamps, and box-score metrics', () => {
+  const payload = structuredClone(validPayload);
+  payload.startedAt = 'not-a-date';
+  payload.events = ['shot made'];
+  payload.boxScore = [{ playerId: 'p1', PTS: -1 }];
+
+  const errors = validateGamePayload(payload);
+  assert.ok(errors.some((error) => error.includes('startedAt')));
+  assert.ok(errors.some((error) => error.includes('events[0]')));
+  assert.ok(errors.some((error) => error.includes('boxScore[0].PTS')));
+});
+
 test('reports invalid types, negative stats, invalid teams, and extra path fields', () => {
   const payload = structuredClone(validPayload);
   payload.teamA.score = '24';
@@ -64,15 +94,23 @@ test('validates uploaded image data URLs and image-generation options', () => {
   assert.ok(errors.some((error) => error.includes('imageGeneration.extra')));
 });
 
-test('requires exactly three valid player reference photos when photos are supplied', () => {
+test('accepts one to three player reference photos and rejects empty or oversized arrays', () => {
   const payload = structuredClone(validPayload);
   payload.players[0].photos = [
     createRasterImageDataUrl('png'),
     createRasterImageDataUrl('jpeg'),
   ];
+  assert.deepEqual(validateGamePayload(payload), []);
 
-  const errors = validateGamePayload(payload);
-  assert.ok(errors.some((error) => error.includes('photos must contain exactly three')));
+  payload.players[0].photos = [];
+  assert.ok(validateGamePayload(payload).some((error) => error.includes('between one and three')));
+  payload.players[0].photos = [
+    createRasterImageDataUrl('png'),
+    createRasterImageDataUrl('jpeg'),
+    createRasterImageDataUrl('webp'),
+    createRasterImageDataUrl('png'),
+  ];
+  assert.ok(validateGamePayload(payload).some((error) => error.includes('between one and three')));
 });
 
 test('rejects malformed base64, unsupported MIME types, and MIME/signature mismatches', async () => {

@@ -5,12 +5,21 @@ const rootFields = new Set([
   'location',
   'teamA',
   'teamB',
+  'teams',
   'players',
+  'boxScore',
+  'events',
+  'status',
+  'startedAt',
+  'completedAt',
   'imageGeneration',
 ]);
-const teamFields = new Set(['name', 'score', 'logo']);
+const teamFields = new Set(['teamId', 'name', 'score', 'logo', 'logoUrl']);
 const playerFields = new Set([
   'id',
+  'firstName',
+  'lastName',
+  'teamId',
   'team',
   'jersey',
   'name',
@@ -24,6 +33,79 @@ const playerFields = new Set([
   'photos',
 ]);
 const generationFields = new Set(['prompt', 'size', 'quality']);
+const boxScoreFields = new Set([
+  'playerId',
+  'id',
+  'firstName',
+  'lastName',
+  'name',
+  'jersey',
+  'teamId',
+  'stats',
+  'team',
+  'PTS',
+  'REB',
+  'AST',
+  'STL',
+  'BLK',
+  'TOV',
+  'TO',
+  'MIN',
+  'FG',
+  'FGA',
+  'FG3',
+  'FG3A',
+  'FT',
+  'FTA',
+  'FG3M',
+  '3PA',
+  'FTM',
+  'FGM',
+  '3PM',
+  'pts',
+  'reb',
+  'ast',
+  'stl',
+  'blk',
+  'to',
+  'min',
+  'fg',
+  'fga',
+  'fg3',
+  'fg3a',
+  'ft',
+  'fta',
+  'fg3m',
+  '3pa',
+  'ftm',
+  'fgm',
+  '3pm',
+  'OREB',
+  'DREB',
+  'PF',
+  'PLUS_MINUS',
+  'oreb',
+  'dreb',
+  'pf',
+  'plusMinus',
+]);
+const statFields = [
+  'PTS', 'REB', 'AST', 'STL', 'BLK', 'TOV', 'TO', 'MIN',
+  'FG', 'FGA', 'FG3', 'FG3A', 'FT', 'FTA',
+  'FG3M', '3PA', 'FTM', 'FGM', '3PM',
+  'pts', 'reb', 'ast', 'stl', 'blk', 'to', 'min',
+  'fg', 'fga', 'fg3', 'fg3a', 'ft', 'fta',
+  'fg3m', '3pa', 'ftm', 'fgm', '3pm',
+  'OREB',
+  'DREB',
+  'PF',
+  'PLUS_MINUS',
+  'oreb',
+  'dreb',
+  'pf',
+  'plusMinus',
+];
+const statFieldSet = new Set(statFields);
 const maxGameDocumentBytes = 14 * 1024 * 1024;
 const imageSizes = new Set(['1024x1024', '1024x1536', '1536x1024', 'auto']);
 const imageQualities = new Set(['low', 'medium', 'high', 'auto']);
@@ -71,9 +153,22 @@ function validateTeam(team, path, errors) {
   }
 
   checkUnknownFields(team, teamFields, `${path}.`, errors);
+  if (team.teamId !== undefined) checkString(team.teamId, `${path}.teamId`, errors, 100);
   checkString(team.name, `${path}.name`, errors, 200);
   checkNumber(team.score, `${path}.score`, errors);
   checkImageDataUrl(team.logo, `${path}.logo`, errors);
+  if (team.logoUrl !== undefined) checkString(team.logoUrl, `${path}.logoUrl`, errors, 2048);
+}
+
+function validateTeams(teams, errors) {
+  if (teams === undefined) return;
+  if (!isRecord(teams)) {
+    errors.push('teams must be an object');
+    return;
+  }
+  checkUnknownFields(teams, new Set(['home', 'away']), 'teams.', errors);
+  validateTeam(teams.home, 'teams.home', errors);
+  validateTeam(teams.away, 'teams.away', errors);
 }
 
 function validatePlayer(player, path, errors) {
@@ -84,12 +179,15 @@ function validatePlayer(player, path, errors) {
 
   checkUnknownFields(player, playerFields, `${path}.`, errors);
   checkString(player.id, `${path}.id`, errors, 100);
+  if (player.firstName !== undefined) checkString(player.firstName, `${path}.firstName`, errors, 100);
+  if (player.lastName !== undefined) checkString(player.lastName, `${path}.lastName`, errors, 100);
+  if (player.teamId !== undefined) checkString(player.teamId, `${path}.teamId`, errors, 100);
   checkString(player.jersey, `${path}.jersey`, errors, 10);
   checkString(player.name, `${path}.name`, errors, 200);
   checkImageDataUrl(player.photo, `${path}.photo`, errors);
   if (player.photos !== undefined) {
-    if (!Array.isArray(player.photos) || player.photos.length !== 3) {
-      errors.push(`${path}.photos must contain exactly three image data URLs`);
+    if (!Array.isArray(player.photos) || player.photos.length < 1 || player.photos.length > 3) {
+      errors.push(`${path}.photos must contain between one and three image data URLs`);
     } else {
       player.photos.forEach((photo, index) => {
         if (photo === undefined) {
@@ -132,6 +230,68 @@ function validateImageGeneration(settings, errors) {
   }
 }
 
+function validateBoxScore(boxScore, errors) {
+  if (!Array.isArray(boxScore)) {
+    errors.push('boxScore must be an array');
+    return;
+  }
+  const playerIds = new Set();
+  boxScore.forEach((player, index) => {
+    const path = `boxScore[${index}]`;
+    if (!isRecord(player)) {
+      errors.push(`${path} must be an object`);
+      return;
+    }
+    checkUnknownFields(player, boxScoreFields, `${path}.`, errors);
+    const playerId = player.playerId ?? player.id;
+    checkString(playerId, `${path}.playerId`, errors, 100);
+    if (typeof playerId === 'string') {
+      if (playerIds.has(playerId)) errors.push(`${path}.playerId must be unique within the game`);
+      playerIds.add(playerId);
+    }
+    for (const field of ['firstName', 'lastName', 'name', 'jersey', 'teamId']) {
+      if (player[field] !== undefined) {
+        const maxLength = {
+          firstName: 100,
+          lastName: 100,
+          name: 200,
+          jersey: 10,
+          teamId: 100,
+        }[field];
+        checkString(player[field], `${path}.${field}`, errors, maxLength);
+      }
+    }
+    if (player.stats !== undefined) {
+      if (!isRecord(player.stats)) {
+        errors.push(`${path}.stats must be an object`);
+      } else {
+        checkUnknownFields(player.stats, statFieldSet, `${path}.stats.`, errors);
+        for (const stat of statFields) {
+          if (player.stats[stat] !== undefined) {
+            if (stat === 'PLUS_MINUS' || stat === 'plusMinus') {
+              if (typeof player.stats[stat] !== 'number' || !Number.isFinite(player.stats[stat])) {
+                errors.push(`${path}.stats.${stat} must be a finite number`);
+              }
+            } else {
+              checkNumber(player.stats[stat], `${path}.stats.${stat}`, errors);
+            }
+          }
+        }
+      }
+    }
+    for (const stat of statFields) {
+      if (player[stat] === undefined) continue;
+      if (stat === 'PLUS_MINUS' || stat === 'plusMinus') {
+        if (typeof player[stat] !== 'number' || !Number.isFinite(player[stat])) {
+          errors.push(`${path}.${stat} must be a finite number`);
+        }
+      } else {
+        checkNumber(player[stat], `${path}.${stat}`, errors);
+      }
+    }
+  });
+}
+
 export function validateGamePayload(payload) {
   const errors = [];
 
@@ -144,6 +304,28 @@ export function validateGamePayload(payload) {
   checkString(payload.location, 'location', errors, 200);
   validateTeam(payload.teamA, 'teamA', errors);
   validateTeam(payload.teamB, 'teamB', errors);
+  validateTeams(payload.teams, errors);
+  for (const field of ['status']) {
+    if (payload[field] !== undefined) checkString(payload[field], field, errors, 50);
+  }
+  for (const field of ['startedAt', 'completedAt']) {
+    if (payload[field] !== undefined && (
+      typeof payload[field] !== 'string' ||
+      Number.isNaN(Date.parse(payload[field]))
+    )) {
+      errors.push(`${field} must be a valid date string`);
+    }
+  }
+  if (payload.boxScore !== undefined) validateBoxScore(payload.boxScore, errors);
+  if (payload.events !== undefined) {
+    if (!Array.isArray(payload.events)) {
+      errors.push('events must be an array');
+    } else {
+      payload.events.forEach((event, index) => {
+        if (!isRecord(event)) errors.push(`events[${index}] must be an object`);
+      });
+    }
+  }
   validateImageGeneration(payload.imageGeneration, errors);
 
   if (!Array.isArray(payload.players)) {

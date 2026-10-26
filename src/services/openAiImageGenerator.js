@@ -60,7 +60,9 @@ function buildPrompt(player, game, extraPrompt, playerImageCount) {
     'Reference image 1 is visual art-direction guidance only. Draw on broad qualities such as a light off-white paper field, gritty monochrome sports-editorial collage, tactile grain, layered torn-paper shapes, bold condensed typography, dramatic contrast, and a restrained team-color accent. Create a fresh composition; do not reproduce the reference layout, exact placement, wording, pictured athlete, uniform, logo, signature, slogans, or distinctive graphic marks.',
     playerImageCount === 3
       ? "Reference images 2, 3, and 4 show the same featured player from different views. Use each photo once to preserve the player's recognizable face, skin tone, hair, and build, and show that same player in three distinct depictions: one prominent dynamic full-body basketball pose and two smaller, lighter monochrome supporting cutouts integrated into the surrounding design. Do not substitute the athlete from the style reference or invent extra player depictions."
-      : 'Reference image 2 shows the featured player. Preserve their recognizable face, skin tone, hair, and build, and create one prominent dynamic basketball depiction with smaller supporting crops derived from this same player.',
+      : playerImageCount === 2
+        ? "Reference images 2 and 3 show the same featured player from different views. Preserve the player's recognizable face, skin tone, hair, and build, and use the photos to create one prominent dynamic basketball depiction and one smaller supporting cutout of the same player."
+        : 'Reference image 2 shows the featured player. Preserve their recognizable face, skin tone, hair, and build, and create one prominent dynamic basketball depiction with smaller supporting crops derived from this same player.',
     `Reference image ${playerImageCount + 2} is the supplied team logo. Use it faithfully and derive the uniform/accent color palette from this logo, not from the visual reference.`,
     `Feature the player in a uniform using the team colors. Player name, spelled exactly: ${player.name}. Jersey number: ${player.jersey}. Team name, spelled exactly: ${teamName}.`,
     `Display the exact points total: ${player.pts} POINTS. This is the only statistic to include.`,
@@ -91,8 +93,8 @@ export async function generateFlyerImage({
   }
 
   const suppliedPlayerImages = playerImages || (playerImage ? [playerImage] : []);
-  if (suppliedPlayerImages.length !== 1 && suppliedPlayerImages.length !== 3) {
-    throw new ImageGenerationError('Provide either one legacy player photo or exactly three player reference photos.');
+  if (suppliedPlayerImages.length < 1 || suppliedPlayerImages.length > 3) {
+    throw new ImageGenerationError('Provide between one and three player reference photos.');
   }
 
   const [playerReferences, teamLogoReference, templateReference] = await Promise.all([
