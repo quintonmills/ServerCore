@@ -13,6 +13,7 @@ const rootFields = new Set([
   'startedAt',
   'completedAt',
   'imageGeneration',
+  'metadata',
 ]);
 const teamFields = new Set(['teamId', 'name', 'score', 'logo', 'logoUrl']);
 const playerFields = new Set([
@@ -33,6 +34,7 @@ const playerFields = new Set([
   'photos',
 ]);
 const generationFields = new Set(['prompt', 'size', 'quality']);
+const metadataFields = new Set(['testMode', 'verifiedForLicensing']);
 const boxScoreFields = new Set([
   'playerId',
   'id',
@@ -230,6 +232,53 @@ function validateImageGeneration(settings, errors) {
   }
 }
 
+function validateMetadata(metadata, errors) {
+  if (metadata === undefined) return;
+  if (!isRecord(metadata)) {
+    errors.push('metadata must be an object');
+    return;
+  }
+
+  checkUnknownFields(metadata, metadataFields, 'metadata.', errors);
+  for (const field of metadataFields) {
+    if (metadata[field] !== undefined && typeof metadata[field] !== 'boolean') {
+      errors.push(`metadata.${field} must be a boolean`);
+    }
+  }
+}
+
+function validateEvent(event, path, errors) {
+  if (!isRecord(event)) {
+    errors.push(`${path} must be an object`);
+    return;
+  }
+
+  if (event.period !== undefined &&
+      !(typeof event.period === 'string' && event.period.trim()) &&
+      !(typeof event.period === 'number' && Number.isFinite(event.period))) {
+    errors.push(`${path}.period must be a number or non-empty string`);
+  }
+  if (event.playerId !== undefined) checkString(event.playerId, `${path}.playerId`, errors, 100);
+  if (event.action !== undefined) checkString(event.action, `${path}.action`, errors, 100);
+  if (event.timestamp !== undefined && (
+    typeof event.timestamp !== 'string' ||
+    Number.isNaN(Date.parse(event.timestamp))
+  )) {
+    errors.push(`${path}.timestamp must be a valid date string`);
+  }
+  if (event.resultingScore !== undefined) {
+    if (!isRecord(event.resultingScore)) {
+      errors.push(`${path}.resultingScore must be an object`);
+    } else {
+      for (const team of ['teamA', 'teamB']) {
+        if (event.resultingScore[team] !== undefined) {
+          checkNumber(event.resultingScore[team], `${path}.resultingScore.${team}`, errors);
+        }
+      }
+    }
+  }
+}
+
 function validateBoxScore(boxScore, errors) {
   if (!Array.isArray(boxScore)) {
     errors.push('boxScore must be an array');
@@ -316,16 +365,19 @@ export function validateGamePayload(payload) {
       errors.push(`${field} must be a valid date string`);
     }
   }
+  if (typeof payload.status === 'string' &&
+      !['IN_PROGRESS', 'COMPLETED'].includes(payload.status.toUpperCase())) {
+    errors.push('status must be IN_PROGRESS or COMPLETED');
+  }
   if (payload.boxScore !== undefined) validateBoxScore(payload.boxScore, errors);
   if (payload.events !== undefined) {
     if (!Array.isArray(payload.events)) {
       errors.push('events must be an array');
     } else {
-      payload.events.forEach((event, index) => {
-        if (!isRecord(event)) errors.push(`events[${index}] must be an object`);
-      });
+      payload.events.forEach((event, index) => validateEvent(event, `events[${index}]`, errors));
     }
   }
+  validateMetadata(payload.metadata, errors);
   validateImageGeneration(payload.imageGeneration, errors);
 
   if (!Array.isArray(payload.players)) {

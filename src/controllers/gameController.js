@@ -71,36 +71,32 @@ function getCanonicalBoxScore(payload) {
   });
 }
 
-async function updateCareerStats(PlayerModel, boxScore, gameId) {
+async function updateCareerStats(PlayerModel, boxScore) {
   for (const player of boxScore) {
     const stats = normalizePlayerStats(player);
-    const increment = Object.fromEntries(
-      Object.entries(stats).map(([stat, value]) => [`careerStats.${stat}`, value]),
-    );
-    try {
-      await PlayerModel.findOneAndUpdate(
-        { playerId: player.playerId, appliedGameIds: { $ne: gameId } },
-        {
-          $set: {
-            firstName: player.firstName,
-            lastName: player.lastName,
-            ...(player.jersey ? { jersey: player.jersey } : {}),
-            ...(player.teamId ? { teamId: player.teamId } : {}),
-          },
-          $setOnInsert: { playerId: player.playerId },
-          $inc: increment,
-          $addToSet: { appliedGameIds: gameId },
+    const increment = {
+      'careerStats.pts': stats.PTS,
+      'careerStats.reb': stats.REB,
+      'careerStats.ast': stats.AST,
+      'careerStats.stl': stats.STL,
+      'careerStats.blk': stats.BLK,
+      'careerStats.to': stats.TOV,
+      'careerStats.gamesPlayed': 1,
+    };
+    await PlayerModel.findOneAndUpdate(
+      { playerId: player.playerId },
+      {
+        $set: {
+          firstName: player.firstName,
+          lastName: player.lastName,
+          ...(player.jersey ? { jersey: player.jersey } : {}),
+          ...(player.teamId ? { teamId: player.teamId } : {}),
         },
-        { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
-      );
-    } catch (error) {
-      if (!isDuplicateKeyError(error)) throw error;
-      const alreadyApplied = await PlayerModel.exists({
-        playerId: player.playerId,
-        appliedGameIds: gameId,
-      });
-      if (!alreadyApplied) throw error;
-    }
+        $setOnInsert: { playerId: player.playerId },
+        $inc: increment,
+      },
+      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+    );
   }
 }
 
@@ -160,7 +156,7 @@ export function createGameController({
     const awayTeam = request.body.teams?.away || request.body.teamB;
     const gamePayload = {
       ...request.body,
-      status: request.body.status || 'completed',
+      status: (request.body.status || 'COMPLETED').toUpperCase(),
       teams: {
         home: {
           teamId: homeTeam.teamId,
@@ -175,6 +171,7 @@ export function createGameController({
       },
       boxScore,
       events: request.body.events || [],
+      metadata: request.body.metadata || {},
       imageGeneration,
     };
 
@@ -197,7 +194,7 @@ export function createGameController({
       let finalizedGame = await saveFinalizedGame(GameModel, gamePayload);
       if (!finalizedGame) throw new Error('The finalized game could not be saved');
       await updateTeams(TeamModel, request.body);
-      await updateCareerStats(PlayerModel, boxScore, gamePayload.gameId);
+      await updateCareerStats(PlayerModel, boxScore);
 
       for (const player of players) {
         const input = playerInputs.get(player.id);

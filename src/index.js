@@ -22,6 +22,16 @@ export async function startServer() {
     throw new Error('PORT must be an integer between 1 and 65535');
   }
 
+  mongoose.connection.on('connected', () => {
+    console.log('[startup] MongoDB connection established');
+  });
+  mongoose.connection.on('disconnected', () => {
+    console.error('[startup] MongoDB connection lost');
+  });
+  mongoose.connection.on('error', (error) => {
+    console.error(`[startup] MongoDB connection error: ${safeConnectionError(error)}`);
+  });
+
   try {
     await mongoose.connect(MONGODB_URI);
   } catch (error) {

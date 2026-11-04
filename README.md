@@ -117,14 +117,17 @@ The server waits for a successful MongoDB connection before it starts accepting 
   ],
   "events": [
     {
-      "type": "shot_made",
-      "period": 1,
-      "clock": "10:32",
+      "period": "Q1",
       "playerId": "p1",
-      "teamId": "red-team",
-      "points": 2
+      "action": "PTS_2",
+      "timestamp": "2026-10-21T11:03:00.000Z",
+      "resultingScore": { "teamA": 2, "teamB": 0 }
     }
   ],
+  "metadata": {
+    "testMode": false,
+    "verifiedForLicensing": true
+  },
   "imageGeneration": {
     "prompt": "Add a subtle arena spotlight",
     "size": "1024x1536",
@@ -133,7 +136,7 @@ The server waits for a successful MongoDB connection before it starts accepting 
 }
 ```
 
-The frontend may send one to three `photos` for the top-ranked scorer and may omit player photos or team `logo` assets. Supply PNG, JPEG, or WebP image data URLs, each no larger than 5 MB. When the selected player has one to three photos and their team has a logo, the API generates a flyer; otherwise it still persists the game and returns an empty `graphics` array. The existing singular `photo` field remains accepted for older clients. `boxScore` is optional; when omitted, player stats are used to build it. `events` is an optional array of play-by-play objects, and box-score entries can provide uppercase or lowercase stat keys. `teamId` values identify corresponding Team and Player records. `imageGeneration` is optional: `prompt` adds compatible art direction, `size` accepts `1024x1024`, `1024x1536`, `1536x1024`, or `auto`, and `quality` accepts `low`, `medium`, `high`, or `auto`. Defaults are `1024x1536` and `high`. Uploaded player photos, team logos, and image-generation settings are saved with the game in MongoDB; the API limits the complete stored game payload to 14 MB to stay safely below MongoDB's 16 MB document limit. Image data is omitted from the response to keep it small.
+The frontend may send one to three `photos` for the top-ranked scorer and may omit player photos or team `logo` assets. Supply PNG, JPEG, or WebP image data URLs, each no larger than 5 MB. When the selected player has one to three photos and their team has a logo, the API generates a flyer; otherwise it still persists the game and returns an empty `graphics` array. The existing singular `photo` field remains accepted for older clients. `boxScore` is optional; when omitted, player stats are used to build it. `events` is an optional array of play-by-play objects; the typed fields are `period`, `playerId`, `action`, `timestamp`, and `resultingScore`. Existing event properties are retained for older clients. Box-score entries can provide uppercase or lowercase stat keys. `metadata` optionally stores `testMode` and `verifiedForLicensing` booleans. `teamId` values identify corresponding Team and Player records. `imageGeneration` is optional: `prompt` adds compatible art direction, `size` accepts `1024x1024`, `1024x1536`, `1536x1024`, or `auto`, and `quality` accepts `low`, `medium`, `high`, or `auto`. Defaults are `1024x1536` and `high`. Uploaded player photos, team logos, and image-generation settings are saved with the game in MongoDB; the API limits the complete stored game payload to 14 MB to stay safely below MongoDB's 16 MB document limit. Image data is omitted from the response to keep it small.
 
 The API returns `200 OK` with the upserted game and exactly one generated flyer. The `game` includes Mongoose timestamps, and the graphic has its player's ID and name, its generated file path, a public preview URL, and a stable download URL:
 
@@ -163,7 +166,7 @@ The API returns `200 OK` with the upserted game and exactly one generated flyer.
       "home": { "teamId": "red-team", "name": "Red Team", "score": 24 },
       "away": { "teamId": "blue-team", "name": "Blue Team", "score": 18 }
     },
-    "status": "completed",
+    "status": "COMPLETED",
     "boxScore": [
       { "playerId": "p1", "PTS": 14, "REB": 5, "AST": 3 }
     ],
@@ -195,7 +198,7 @@ The API returns `200 OK` with the upserted game and exactly one generated flyer.
 
 `publicUrl` previews the JPEG. `downloadUrl` is a QR-code-friendly HTTPS endpoint that serves the same JPEG with `Content-Disposition: attachment`; it does not expire while the flyer remains in storage. Configure `PUBLIC_BASE_URL` as the externally reachable HTTPS API origin and use durable storage for `output/` so downloads remain available after restarts and redeployments. If no player has at least one point, or required flyer assets are missing, finalization still saves the game and returns an empty `graphics` array.
 
-Every valid finalization uses `gameId` as an upsert key: sending it again updates that game rather than creating a duplicate, and regenerates its cards. A unique MongoDB index enforces this behavior. Career totals use atomic `$inc` updates and track applied game IDs so retries do not count a game's box score twice. Team and player records are upserted when team/player IDs are supplied. The response is `200 OK` for both first and repeated finalizations.
+Every valid finalization uses `gameId` as an upsert key: sending it again updates that game rather than creating a duplicate, and regenerates its cards. A unique MongoDB index enforces this behavior. Player career totals (`pts`, `reb`, `ast`, `stl`, `blk`, `to`, and `gamesPlayed`) are updated atomically with `$inc` for every finalize request; repeated finalizations increment them again. Team and player records are upserted when team/player IDs are supplied. The response is `200 OK` for both first and repeated finalizations.
 
 Input is validated before persistence or rendering. Invalid fields, unexpected keys (including filesystem paths), unsupported player teams, non-numeric or negative scores/stats, and malformed JSON return a `400` JSON error. For example:
 

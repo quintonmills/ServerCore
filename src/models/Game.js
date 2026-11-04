@@ -61,6 +61,39 @@ const boxScoreSchema = new mongoose.Schema(
   { _id: false, strict: false },
 );
 
+const playByPlayEventSchema = new mongoose.Schema(
+  {
+    period: { type: mongoose.Schema.Types.Mixed },
+    playerId: { type: String, maxlength: 100 },
+    action: { type: String, maxlength: 100 },
+    timestamp: { type: Date },
+    resultingScore: {
+      teamA: { type: Number, min: 0 },
+      teamB: { type: Number, min: 0 },
+    },
+  },
+  { strict: false },
+);
+
+const generatedMediaSchema = new mongoose.Schema(
+  {
+    type: { type: String, required: true, maxlength: 100 },
+    playerId: { type: String, maxlength: 100 },
+    publicUrl: { type: String, required: true, maxlength: 2048 },
+    downloadUrl: { type: String, required: true, maxlength: 2048 },
+    generatedAt: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
+const metadataSchema = new mongoose.Schema(
+  {
+    testMode: { type: Boolean, default: false },
+    verifiedForLicensing: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
 const playerSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, maxlength: 100 },
@@ -85,11 +118,15 @@ const playerSchema = new mongoose.Schema(
 
 const gameSchema = new mongoose.Schema(
   {
-    gameId: { type: String, required: true, maxlength: 100 },
+    gameId: { type: String, required: true, unique: true, maxlength: 100 },
     location: { type: String, required: true, maxlength: 200 },
-    status: { type: String, maxlength: 50, default: 'completed' },
+    status: {
+      type: String,
+      enum: ['IN_PROGRESS', 'COMPLETED'],
+      default: 'COMPLETED',
+    },
     startedAt: { type: Date },
-    completedAt: { type: Date },
+    completedAt: { type: Date, default: Date.now },
     teamA: { type: teamSchema, required: true },
     teamB: { type: teamSchema, required: true },
     teams: {
@@ -98,27 +135,12 @@ const gameSchema = new mongoose.Schema(
     },
     players: { type: [playerSchema], required: true },
     boxScore: { type: [boxScoreSchema], default: [] },
-    events: { type: [mongoose.Schema.Types.Mixed], default: [] },
-    generatedMedia: {
-      type: [
-        new mongoose.Schema(
-          {
-            type: { type: String, required: true, enum: ['flyer'] },
-            playerId: { type: String, required: true, maxlength: 100 },
-            publicUrl: { type: String, required: true, maxlength: 2048 },
-            downloadUrl: { type: String, required: true, maxlength: 2048 },
-            generatedAt: { type: Date, default: Date.now },
-          },
-          { _id: false },
-        ),
-      ],
-      default: [],
-    },
+    events: { type: [playByPlayEventSchema], default: [] },
+    generatedMedia: { type: [generatedMediaSchema], default: [] },
+    metadata: { type: metadataSchema, default: () => ({}) },
     imageGeneration: { type: imageGenerationSchema },
   },
   { timestamps: true, versionKey: false },
 );
-
-gameSchema.index({ gameId: 1 }, { unique: true });
 
 export default mongoose.model('Game', gameSchema);

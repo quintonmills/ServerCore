@@ -46,6 +46,29 @@ test('accepts game history fields and nested or flattened box-score metrics', ()
   assert.deepEqual(validateGamePayload(payload), []);
 });
 
+test('validates structured play-by-play events and licensing metadata', () => {
+  const payload = structuredClone(validPayload);
+  payload.status = 'IN_PROGRESS';
+  payload.events = [{
+    period: 'Q1',
+    playerId: 'p1',
+    action: 'PTS_2',
+    timestamp: '2026-10-26T12:00:00.000Z',
+    resultingScore: { teamA: 2, teamB: 0 },
+  }];
+  payload.metadata = { testMode: false, verifiedForLicensing: true };
+  assert.deepEqual(validateGamePayload(payload), []);
+
+  payload.events[0].resultingScore.teamA = -1;
+  payload.metadata.verifiedForLicensing = 'yes';
+  const errors = validateGamePayload(payload);
+  assert.ok(errors.some((error) => error.includes('resultingScore.teamA')));
+  assert.ok(errors.some((error) => error.includes('metadata.verifiedForLicensing')));
+
+  payload.status = 'CANCELLED';
+  assert.ok(validateGamePayload(payload).some((error) => error.includes('status must be')));
+});
+
 test('rejects malformed play-by-play entries, timestamps, and box-score metrics', () => {
   const payload = structuredClone(validPayload);
   payload.startedAt = 'not-a-date';

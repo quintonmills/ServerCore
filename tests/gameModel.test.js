@@ -120,12 +120,44 @@ test('player and team schemas expose the identifiers and metric fields used by t
     lastName: 'Example',
     jersey: '3',
     teamId: 'red',
-    careerStats: { PTS: 14, REB: 5 },
+    careerStats: { pts: 14, reb: 5, gamesPlayed: 1 },
   });
   const team = new Team({ teamId: 'red', name: 'Red Team', logoUrl: 'https://cdn.example.com/red.png' });
 
   assert.equal(player.validateSync(), undefined);
   assert.equal(team.validateSync(), undefined);
-  assert.equal(player.careerStats.PTS, 14);
+  assert.equal(player.careerStats.pts, 14);
   assert.equal(team.logoUrl, 'https://cdn.example.com/red.png');
+});
+
+test('game and player schemas store licensing metadata and typed play-by-play fields', () => {
+  const game = new Game({
+    gameId: 'game-104',
+    location: 'ScoreKings Arena',
+    teamA: { name: 'Red Team', score: 2 },
+    teamB: { name: 'Blue Team', score: 0 },
+    players: [],
+    status: 'COMPLETED',
+    metadata: { testMode: false, verifiedForLicensing: true },
+    events: [{
+      period: 'Q1',
+      playerId: 'player-1',
+      action: 'PTS_2',
+      timestamp: '2026-10-26T12:00:00.000Z',
+      resultingScore: { teamA: 2, teamB: 0 },
+    }],
+  });
+  const player = new Player({
+    playerId: 'player-2',
+    firstName: 'Alex',
+    careerStats: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, to: 0, gamesPlayed: 0 },
+  });
+
+  assert.equal(game.validateSync(), undefined);
+  assert.equal(game.status, 'COMPLETED');
+  assert.equal(game.metadata.verifiedForLicensing, true);
+  assert.equal(game.events[0].action, 'PTS_2');
+  assert.equal(game.events[0].resultingScore.teamA, 2);
+  assert.equal(player.validateSync(), undefined);
+  assert.equal(game.generatedMedia.length, 0);
 });

@@ -45,7 +45,14 @@ const payload = {
       TOV: 2,
     },
   ],
-  events: [{ type: 'shot_made', period: 1, playerId: 'p1', points: 2 }],
+  events: [{
+    period: 1,
+    playerId: 'p1',
+    action: 'PTS_2',
+    timestamp: '2026-10-26T12:00:00.000Z',
+    resultingScore: { teamA: 2, teamB: 0 },
+  }],
+  metadata: { testMode: false, verifiedForLicensing: true },
 };
 
 function createTestApp(options = {}) {
@@ -174,12 +181,16 @@ test('finalize persists the supplied game ID and returns generated graphics', as
         `https://scorekings-api.example.com/api/games/flyers/${filename}/download`,
       );
       assert.equal(savedPayload.gameId, 'game-101');
-      assert.equal(savedPayload.status, 'completed');
+      assert.equal(savedPayload.status, 'COMPLETED');
       assert.equal(savedPayload.boxScore[0].PTS, 14);
       assert.equal(savedPayload.events.length, 2);
+      assert.equal(savedPayload.events[0].action, 'PTS_2');
+      assert.equal(savedPayload.events[0].resultingScore.teamA, 2);
       assert.equal(statUpdates.length, 3);
-      assert.equal(statUpdates[0].filter.appliedGameIds.$ne, 'game-101');
-      assert.equal(statUpdates[0].update.$inc['careerStats.PTS'], 14);
+      assert.deepEqual(statUpdates[0].filter, { playerId: 'p1' });
+      assert.equal(statUpdates[0].update.$inc['careerStats.pts'], 14);
+      assert.equal(statUpdates[0].update.$inc['careerStats.gamesPlayed'], 1);
+      assert.equal(savedPayload.metadata.verifiedForLicensing, true);
       assert.equal(statUpdates[0].update.$set.teamId, 'red-team');
       assert.equal(teamUpdates.length, 2);
       assert.equal(savedPayload.teams.home.teamId, 'red-team');
@@ -274,6 +285,7 @@ test('persists game history when optional flyer photos or team logos are not sup
     assert.equal(savedPayload.boxScore[0].playerId, 'p1');
     assert.equal(savedPayload.boxScore[0].PTS, 14);
     assert.equal(savedPayload.events.length, 1);
+    assert.deepEqual(savedPayload.metadata, { testMode: false, verifiedForLicensing: true });
   });
 });
 
