@@ -58,17 +58,13 @@ function buildPrompt(player, game, extraPrompt, playerImageCount) {
   const teamName = player.team === 'Team A' ? game.teamA.name : game.teamB.name;
   const instructions = [
     'Create one complete, original portrait-format basketball achievement flyer as finished artwork.',
-    'Reference image 1 is visual art-direction guidance only. Draw on broad qualities such as a light off-white paper field, gritty monochrome sports-editorial collage, tactile grain, layered torn-paper shapes, bold condensed typography, dramatic contrast, and a restrained team-color accent. Create a fresh composition; do not reproduce the reference layout, exact placement, wording, pictured athlete, uniform, logo, signature, slogans, or distinctive graphic marks.',
-    playerImageCount === 3
-      ? "Reference images 2, 3, and 4 show the same featured player from different views. Use each photo once to preserve the player's recognizable face, skin tone, hair, and build, and show that same player in three distinct depictions: one prominent dynamic full-body basketball pose and two smaller, lighter monochrome supporting cutouts integrated into the surrounding design. Do not substitute the athlete from the style reference or invent extra player depictions."
-      : playerImageCount === 2
-        ? "Reference images 2 and 3 show the same featured player from different views. Preserve the player's recognizable face, skin tone, hair, and build, and use the photos to create one prominent dynamic basketball depiction and one smaller supporting cutout of the same player."
-        : 'Reference image 2 shows the featured player. Preserve their recognizable face, skin tone, hair, and build, and create one prominent dynamic basketball depiction with smaller supporting crops derived from this same player.',
+    'Reference image 1 is visual art-direction guidance only. Ignore all text and numbers, people, athletes, faces, uniforms, poses, logos, signatures, slogans, and layout in that image. Borrow only broad non-human qualities such as a light paper field, gritty monochrome sports-editorial texture, layered paper, bold condensed typography, dramatic contrast, and restrained team-color accents. Create a fresh composition.',
+    `Reference images 2 through ${playerImageCount + 1} show the same featured player. Use them only to accurately identify that person; preserve their recognizable face, skin tone, hair, and natural appearance without inferring or changing their gender or body type. Create exactly one prominent, realistic head-and-shoulders portrait of this player. Keep the image framed at the head and shoulders; do not depict a full body, invent body details or poses, or add duplicate portraits or extra people.`,
     `Reference image ${playerImageCount + 2} is the supplied team logo. Use it faithfully and derive the uniform/accent color palette from this logo, not from the visual reference.`,
-    `Feature the player in a uniform using the team colors. Player name, spelled exactly: ${player.name}. Jersey number: ${player.jersey}. Team name, spelled exactly: ${teamName}.`,
+    `If a uniform is visible within the head-and-shoulders crop, use the team colors. Player name, spelled exactly: ${player.name}. Jersey number: ${player.jersey}. Team name, spelled exactly: ${teamName}.`,
     `Display the exact points total: ${player.pts} POINTS. This is the only statistic to include.`,
-    'Include only the player name, jersey number, team name, and points total as factual text. Do not add rebounds, assists, other statistics, location, opponents, scores, slogans, signatures, watermarks, or unprovided facts. Do not include brand marks other than the supplied team logo.',
-    'Use strong, readable typography with every requested word and number spelled and rendered exactly once. Keep the player and all required text fully inside the image.',
+    'Include only the player name, jersey number, team name, and points total as factual text. Do not add rebounds, assists, other statistics, location, opponents, scores, slogans, signatures, watermarks, or unprovided facts. Do not include brand marks other than the supplied team logo. Do not copy any text or numbers from the style reference.',
+    'Use strong, readable typography with every requested word and number spelled and rendered exactly once. Keep the portrait and all required text fully inside the image.',
     'Output only the finished flyer artwork with no mockup, external frame, or explanatory text.'
   ];
 
