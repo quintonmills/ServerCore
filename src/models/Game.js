@@ -103,6 +103,7 @@ const playerSchema = new mongoose.Schema(
     pts: { type: Number, required: true, min: 0 },
     reb: { type: Number, required: true, min: 0 },
     ast: { type: Number, required: true, min: 0 },
+    topPerformer: { type: Boolean },
     stl: { type: Number, required: true, min: 0 },
     blk: { type: Number, required: true, min: 0 },
     to: { type: Number, required: true, min: 0 },

@@ -7,6 +7,7 @@ import {
   validateGeneratedRasterImage,
   validateRasterImageDataUrl,
 } from '../utils/rasterImage.js';
+import { evaluateGraphicTier } from '../utils/evaluateGraphicTier.js';
 
 const apiUrl = 'https://api.openai.com/v1/images/edits';
 const defaultImageModel = 'gpt-image-2.5-sunburst';
@@ -37,6 +38,7 @@ async function loadTemplateReference(templateImage) {
   if (!mimeType) {
     throw new ImageGenerationError('The flyer style reference must be a PNG, JPEG, or WebP image.');
   }
+
   let buffer;
   try {
     buffer = await readFile(templatePath);
@@ -54,23 +56,46 @@ async function loadTemplateReference(templateImage) {
   }
 }
 
-function buildPrompt(player, game, extraPrompt, playerImageCount) {
+function buildPrompt(player, game, extraPrompt, playerImageCount, tier) {
   const teamName = player.team === 'Team A' ? game.teamA.name : game.teamB.name;
+  const isReboundDoubleDouble =
+    player.reb >= 10 &&
+    player.pts < 18 &&
+    (player.pts >= 10 || player.ast >= 10);
+  const featuredStat = isReboundDoubleDouble
+    ? { label: 'REBOUNDS', value: player.reb }
+    : { label: 'POINTS', value: player.pts };
   const instructions = [
     'Create one complete, original portrait-format basketball achievement flyer as finished artwork.',
-    'Reference image 1 is visual art-direction guidance only. Ignore all text and numbers, people, athletes, faces, uniforms, poses, logos, signatures, slogans, and layout in that image. Borrow only broad non-human qualities such as a light paper field, gritty monochrome sports-editorial texture, layered paper, bold condensed typography, dramatic contrast, and restrained team-color accents. Create a fresh composition.',
+    `Keep the established baseline composition: one prominent head-and-shoulders player portrait and a clear hierarchy for player name, jersey number, team, and the featured ${featuredStat.label.toLowerCase()} stat, with all content fully inside the portrait canvas. Preserve this composition across themes; tier styling changes visual treatment only.`,
+    'Reference image 1 is the supplied flyer example and the primary visual art-direction reference. Draw from its gritty monochrome sports-editorial texture, torn-paper layering, bold condensed typography, dramatic contrast, and energetic collage treatment, while adapting the composition to the fixed baseline hierarchy and selected tier theme. Do not copy its text, numbers, athlete, face, uniform, pose, logos, slogans, or exact layout.',
     `Reference images 2 through ${playerImageCount + 1} show the same featured player. Use them only to accurately identify that person; preserve their recognizable face, skin tone, hair, and natural appearance without inferring or changing their gender or body type. Create exactly one prominent, realistic head-and-shoulders portrait of this player. Keep the image framed at the head and shoulders; do not depict a full body, invent body details or poses, or add duplicate portraits or extra people.`,
-    `Reference image ${playerImageCount + 2} is the supplied team logo. Use it faithfully and derive the uniform/accent color palette from this logo, not from the visual reference.`,
+    `Reference image ${playerImageCount + 2} is the supplied team logo. Use it faithfully and derive the uniform/accent color palette from this logo, not from the flyer example.`,
     `If a uniform is visible within the head-and-shoulders crop, use the team colors. Player name, spelled exactly: ${player.name}. Jersey number: ${player.jersey}. Team name, spelled exactly: ${teamName}.`,
-    `Display the exact points total: ${player.pts} POINTS. This is the only statistic to include.`,
-    'Include only the player name, jersey number, team name, and points total as factual text. Do not add rebounds, assists, other statistics, location, opponents, scores, slogans, signatures, watermarks, or unprovided facts. Do not include brand marks other than the supplied team logo. Do not copy any text or numbers from the style reference.',
+    `Display the exact featured stat as "${featuredStat.label}" and the amount "${featuredStat.value}". This is the only statistic to include; do not substitute points or another stat.`,
+    'Include only the player name, jersey number, team name, and the single featured stat as factual text. Do not add any other statistics, location, opponents, scores, slogans, signatures, or unprovided facts. Do not copy any text or numbers from the flyer example, and do not add textual watermarks or brand marks other than the supplied team logo.',
     'Use strong, readable typography with every requested word and number spelled and rendered exactly once. Keep the portrait and all required text fully inside the image.',
-    'Output only the finished flyer artwork with no mockup, external frame, or explanatory text.'
+    'Output only the finished flyer artwork with no mockup, external frame, or explanatory text.',
   ];
 
   if (extraPrompt) {
     instructions.push(`Optional additional art direction, if compatible with the fixed player details and design constraints: ${extraPrompt}`);
   }
+
+  if (tier === 3) {
+    instructions.push(
+      'Apply the TIER 3 "King of the Court" luxury theme over the fixed baseline composition: use an obsidian/metallic slate canvas (#050505), chrome-and-gold gradient text fills, subtle non-text crown watermark motifs in the background, and magazine-cover-style dynamic border breaks. Do not change the composition or add factual copy.',
+    );
+  } else if (tier === 2) {
+    instructions.push(
+      'Apply the TIER 2 "En Fuego" dark-mode theme over the fixed baseline composition: add electric neon-lime (#CCFF00) diagonal geometric slash accents, dynamic motion-blur highlights around the player photo cutout, and one clearly legible badge with the exact text "STAT BREAKOUT". Do not change the composition or add other statistics.',
+    );
+  } else {
+    instructions.push(
+      'Apply the TIER 1 standard-run theme: preserve the baseline composition with clean neutral lighting, standard high-contrast dark text, and subtle grid lines. Do not add tier badges or decorative visual effects from higher tiers.',
+    );
+  }
+
   return instructions.join(' ');
 }
 
@@ -102,9 +127,13 @@ export async function generateFlyerImage({
     loadTemplateReference(templateImage),
   ]);
 
+  const tier = evaluateGraphicTier(player);
   const form = new FormData();
   form.append('model', process.env.OPENAI_IMAGE_MODEL || defaultImageModel);
-  form.append('prompt', buildPrompt(player, game, imageGeneration.prompt, playerReferences.length));
+  form.append(
+    'prompt',
+    buildPrompt(player, game, imageGeneration.prompt, playerReferences.length, tier),
+  );
   form.append('size', imageGeneration.size || '1024x1536');
   form.append('quality', imageGeneration.quality || 'high');
   form.append('output_format', 'jpeg');

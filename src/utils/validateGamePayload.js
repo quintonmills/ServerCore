@@ -30,6 +30,7 @@ const playerFields = new Set([
   'stl',
   'blk',
   'to',
+  'topPerformer',
   'photo',
   'photos',
 ]);
@@ -186,6 +187,9 @@ function validatePlayer(player, path, errors) {
   if (player.teamId !== undefined) checkString(player.teamId, `${path}.teamId`, errors, 100);
   checkString(player.jersey, `${path}.jersey`, errors, 10);
   checkString(player.name, `${path}.name`, errors, 200);
+  if (player.topPerformer !== undefined && typeof player.topPerformer !== 'boolean') {
+    errors.push(`${path}.topPerformer must be a boolean`);
+  }
   checkImageDataUrl(player.photo, `${path}.photo`, errors);
   if (player.photos !== undefined) {
     if (!Array.isArray(player.photos) || player.photos.length < 1 || player.photos.length > 3) {

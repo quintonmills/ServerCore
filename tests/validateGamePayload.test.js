@@ -28,6 +28,17 @@ test('accepts the frontend game-finalization payload without quarter, clock, or 
   assert.deepEqual(validateGamePayload(validPayload), []);
 });
 
+test('accepts an optional boolean top-performer flag and rejects other types', () => {
+  const payload = structuredClone(validPayload);
+  payload.players[0].topPerformer = true;
+  assert.deepEqual(validateGamePayload(payload), []);
+
+  payload.players[0].topPerformer = 'true';
+  assert.ok(validateGamePayload(payload).some((error) =>
+    error.includes('players[0].topPerformer must be a boolean'),
+  ));
+});
+
 test('accepts game history fields and nested or flattened box-score metrics', () => {
   const payload = structuredClone(validPayload);
   payload.status = 'completed';

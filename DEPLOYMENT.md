@@ -29,7 +29,7 @@ The Docker image uses Node.js 22 on Debian Bookworm, installs locked production 
 | `MONGODB_URI` | MongoDB Atlas connection string for the `scorekings` database |
 | `OPENAI_API_KEY` | Server-side OpenAI API key used for image generation |
 | `OPENAI_IMAGE_MODEL` | Image-edit model; defaults to `gpt-image-2.5-sunburst` |
-| `FLYER_STYLE_REFERENCE_PATH` | Optional path to a PNG, JPEG, or WebP image used as broad flyer art direction; defaults to the bundled reference |
+| `FLYER_STYLE_REFERENCE_PATH` | Optional path to a PNG, JPEG, or WebP flyer example; defaults to the bundled reference |
 | `CORS_ORIGIN` | Comma-separated exact origins allowed to call the API, e.g. `https://scorekings.example.com,https://admin.example.com` |
 | `PUBLIC_BASE_URL` | The externally reachable HTTPS API origin, e.g. `https://scorekings-api.onrender.com` |
 | `PORT` | Use the host-provided value if required; the app defaults to `5000` locally |
