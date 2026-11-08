@@ -27,6 +27,7 @@ Set the values in `.env`:
 | `PUBLIC_BASE_URL` | Base URL used in returned graphic links | `http://localhost:<PORT>` |
 | `OPENAI_API_KEY` | API key used to generate player portraits with OpenAI | Required for flyer generation |
 | `OPENAI_IMAGE_MODEL` | OpenAI image-edit model | `gpt-image-2.5-sunburst` |
+| `FLYER_STYLE_REFERENCE_PATH` | Optional path to a PNG, JPEG, or WebP flyer style reference | Bundled `assets/flyer-style-reference.png` |
 
 For a MongoDB Atlas deployment, set `MONGODB_URI` to the Atlas connection string provided for your cluster. Keep credentials in the environment file or deployment secret store, not in source control. For a local MongoDB instance using Docker:
 
@@ -217,7 +218,19 @@ If persistence or rendering fails, the API returns an error and never reports su
 
 ## Stat cards
 
-For the top-ranked eligible scorer, when one to three player photos and their team logo are available, the API sends the bundled `assets/flyer-style-reference.png` (or an image at `FLYER_STYLE_REFERENCE_PATH`), player photos, team logo, player identity, featured stat, and optional art direction to OpenAI's image-edit endpoint using `OPENAI_IMAGE_MODEL` (defaults to `gpt-image-2.5-sunburst`). The flyer example guides the gritty monochrome sports-editorial look, torn-paper texture, bold condensed typography, and dramatic contrast; its athlete, text, logo, and exact layout are not copied. The prompt also requests one accurate, gender-inclusive head-and-shoulders portrait based on the submitted player photos and does not request a full-body depiction. It selects REBOUNDS and its amount for a rebound double-double when points are below 18; otherwise it features POINTS. Before building the prompt, single-game stats are deterministically tiered: tier 3 applies for 25+ points or `topPerformer: true`; otherwise tier 2 applies for 18+ points, 8+ assists, or a double-double in points/rebounds/assists; all others are tier 1. Tier 1 keeps the baseline composition with neutral lighting, high-contrast dark text, and subtle grid lines; tier 2 overlays the En Fuego neon-lime dark theme and STAT BREAKOUT badge; tier 3 overlays the King of the Court obsidian, chrome/gold, crown motif, and dynamic border theme. Ranking remains points, rebounds, then assists, descending; ties retain incoming player order. OpenAI generates the complete flyer image, which the backend saves directly without local image composition. Uploaded player photos and team logos are saved with the game in MongoDB; generated JPEGs are written to `output/` (ignored by git) and served at `/output/<filename>` for preview and `/api/games/flyers/<filename>/download` as an attachment. Flyer URLs are also appended to the game's `generatedMedia` array after image generation succeeds. Set `PUBLIC_BASE_URL` to the externally reachable HTTPS API origin.
+For the top-ranked eligible scorer, when one to three player photos and their team logo are available, the API sends a flyer example, player photos, and team logo to OpenAI's image-edit endpoint using `OPENAI_IMAGE_MODEL` (defaults to `gpt-image-2.5-sunburst`). By default, the example is `assets/flyer-style-reference.png`; set `FLYER_STYLE_REFERENCE_PATH` to use another PNG, JPEG, or WebP image. The example guides the gritty monochrome sports-editorial look, torn-paper texture, bold condensed typography, and dramatic contrast. Its athlete, text, logo, and exact layout are not copied. The prompt also requests one accurate, gender-inclusive head-and-shoulders portrait based on the submitted player photos and does not request a full-body depiction.
+
+The featured stat is REBOUNDS for a rebound double-double (10+ rebounds and either 10+ points or 10+ assists) when points are below 18; otherwise it is POINTS. Only that selected stat and its amount are requested as flyer text.
+
+Single-game stats deterministically set the visual tier before the prompt is sent:
+
+| Tier | Qualification | Visual treatment |
+| --- | --- | --- |
+| Tier 1 — Standard Run | Does not meet a higher-tier threshold | Baseline composition, neutral lighting, high-contrast dark text, and subtle grid lines |
+| Tier 2 — En Fuego | 18+ points, 8+ assists, or a double-double in points/rebounds/assists | Dark-mode overlay, neon-lime (`#CCFF00`) diagonal accents, motion-blur highlights, and a STAT BREAKOUT badge |
+| Tier 3 — King of the Court | 25+ points or `topPerformer: true` | Obsidian canvas (`#050505`), chrome/gold text, subtle crown motifs, and dynamic magazine-cover border breaks |
+
+Tier 3 takes precedence when a player qualifies for multiple tiers. Ranking remains points, then rebounds, then assists, descending; ties retain incoming player order. OpenAI generates the complete flyer image, which the backend saves directly without local image composition. Uploaded player photos and team logos are saved with the game in MongoDB; generated JPEGs are written to `output/` (ignored by git) and served at `/output/<filename>` for preview and `/api/games/flyers/<filename>/download` as an attachment. Flyer URLs are also appended to the game's `generatedMedia` array after image generation succeeds. Set `PUBLIC_BASE_URL` to the externally reachable HTTPS API origin.
 
 Because the full flyer typography and logo placement are generated by an image model, text, statistics, and logos may not render perfectly every time. Review generated flyers before sharing them when exact typography or score accuracy is essential.
 
