@@ -135,7 +135,7 @@ export function createGameController({
       return;
     }
 
-    const selectedPlayers = selectPlayersForCards(request.body.players).slice(0, 1);
+    const selectedPlayers = selectPlayersForCards(request.body.players);
 
     const playerInputs = new Map(request.body.players.map((player) => [player.id, player]));
     const players = selectedPlayers.filter((player) => {
@@ -196,7 +196,7 @@ export function createGameController({
       await updateTeams(TeamModel, request.body);
       await updateCareerStats(PlayerModel, boxScore);
 
-      for (const player of players) {
+      const generationResults = await Promise.allSettled(players.map(async (player) => {
         const input = playerInputs.get(player.id);
         const team = player.team === 'Team A' ? request.body.teamA : request.body.teamB;
         const graphic = await generateFlyer(player, finalizedGame, {
@@ -205,20 +205,32 @@ export function createGameController({
           teamLogoImage: team.logo,
           imageGeneration,
         });
-        generated.push({
+        return {
           playerId: player.id,
           playerName: player.name,
           ...graphic,
-        });
+        };
+      }));
+      generated.push(
+        ...generationResults
+          .filter((result) => result.status === 'fulfilled')
+          .map((result) => result.value),
+      );
+      const failedGeneration = generationResults.find((result) => result.status === 'rejected');
+      if (failedGeneration) throw failedGeneration.reason;
+
+      if (generated.length > 0) {
         finalizedGame = await GameModel.findOneAndUpdate(
           { gameId: gamePayload.gameId },
           {
             $push: {
               generatedMedia: {
-                type: 'flyer',
-                playerId: player.id,
-                publicUrl: graphic.publicUrl,
-                downloadUrl: graphic.downloadUrl,
+                $each: generated.map((graphic) => ({
+                  type: 'flyer',
+                  playerId: graphic.playerId,
+                  publicUrl: graphic.publicUrl,
+                  downloadUrl: graphic.downloadUrl,
+                })),
               },
             },
           },

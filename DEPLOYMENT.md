@@ -50,7 +50,7 @@ Expected response:
 {"status":"ok"}
 ```
 
-To verify game finalization, send a valid JSON payload to `POST /api/games/finalize`. It must include one to three player reference photos for the highest-ranked eligible scorer and a logo for that player's team to generate a flyer. Images must be valid PNG, JPEG, or WebP data URLs no larger than 5 MB each; the complete payload must be at most 14 MB. The request also calls OpenAI, so configure `OPENAI_API_KEY`, verify the API organization if required, and ensure the key has access to the model configured with `OPENAI_IMAGE_MODEL` (defaults to `gpt-image-2.5-sunburst`).
+To verify game finalization, send a valid JSON payload to `POST /api/games/finalize`. Include stats for the lineup in the `players` array; the backend saves every player's stats but generates flyers only for up to five highest-ranked impressive stat lines with one to three player reference photos and a logo for that player's team. An impressive line meets the Tier 2 threshold: 18+ points, 8+ assists, a double-double in points/rebounds/assists, or `topPerformer: true`. These image-generation requests run in parallel. Images must be valid PNG, JPEG, or WebP data URLs no larger than 5 MB each; the complete payload must be at most 14 MB. The request also calls OpenAI, so configure `OPENAI_API_KEY`, verify the API organization if required, and ensure the key has access to the model configured with `OPENAI_IMAGE_MODEL` (defaults to `gpt-image-2.5-sunburst`).
 
 Example request shape (replace each image placeholder with a real base64 data URL):
 
@@ -90,7 +90,7 @@ Example request shape (replace each image placeholder with a real base64 data UR
 }
 ```
 
-Use `curl --request POST "$PUBLIC_BASE_URL/api/games/finalize" --header 'Content-Type: application/json' --data-binary @payload.json` after saving a complete request with real image data URLs to `payload.json`. A successful response contains exactly one graphic with `publicUrl` for preview and `downloadUrl` for QR-code downloads. Open the preview URL to check the JPEG; request `downloadUrl` to verify that the JPEG is served with an attachment disposition.
+Use `curl --request POST "$PUBLIC_BASE_URL/api/games/finalize" --header 'Content-Type: application/json' --data-binary @payload.json` after saving a complete request with real image data URLs to `payload.json`. A successful response contains up to five graphics, each with `publicUrl` for preview and `downloadUrl` for QR-code downloads. Open the preview URLs to check the JPEGs; request a `downloadUrl` to verify that its JPEG is served with an attachment disposition.
 
 ## Generated JPEG storage
 

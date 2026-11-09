@@ -82,12 +82,11 @@ async function withServer(app, run) {
 test('finalize persists the supplied game ID and returns generated graphics', async () => {
   let savedPayload;
   let savedGame;
-  let renderCalls = 0;
+  const renderedPlayers = [];
   const statUpdates = [];
   const teamUpdates = [];
-  const filename = `game-101-p2-${randomUUID()}.jpg`;
   const flyerBuffer = createGeneratedJpegBuffer();
-  const flyerPath = path.join(outputDirectory, filename);
+  const flyerPaths = [];
   const multiPlayerPayload = {
     ...payload,
     teamB: { ...payload.teamB, logo: pngDataUrl },
@@ -112,14 +111,14 @@ test('finalize persists the supplied game ID and returns generated graphics', as
         id: 'p3',
         name: 'Jordan',
         pts: 14,
-        reb: 8,
+        reb: 10,
       },
     ],
   };
   const GameModel = {
     async findOneAndUpdate(filter, update) {
       if (update.$push) {
-        savedGame.generatedMedia.push(update.$push.generatedMedia);
+        savedGame.generatedMedia.push(...update.$push.generatedMedia.$each);
         return savedGame;
       }
       savedPayload = update.$set;
@@ -144,10 +143,12 @@ test('finalize persists the supplied game ID and returns generated graphics', as
     },
     publicBaseUrl: 'https://scorekings-api.example.com',
     flyerGenerator: async (player, game, options) => {
-      renderCalls += 1;
-      assert.equal(player.id, 'p2');
+      renderedPlayers.push(player.id);
       assert.deepEqual(options.playerImages, [pngDataUrl, pngDataUrl, pngDataUrl]);
       assert.equal(options.teamLogoImage, pngDataUrl);
+      const filename = `game-101-${player.id}-${randomUUID()}.jpg`;
+      const flyerPath = path.join(outputDirectory, filename);
+      flyerPaths.push(flyerPath);
       await mkdir(outputDirectory, { recursive: true });
       await writeFile(flyerPath, flyerBuffer);
       return {
@@ -173,12 +174,17 @@ test('finalize persists the supplied game ID and returns generated graphics', as
       assert.equal(body.game.events.length, 2);
       assert.equal(body.game.boxScore.length, 3);
       assert.equal(body.game.generatedMedia[0].publicUrl, body.graphics[0].publicUrl);
-      assert.equal(body.graphics.length, 1);
+      assert.equal(body.graphics.length, 2);
+      assert.deepEqual(renderedPlayers, ['p2', 'p3']);
       assert.equal(body.graphics[0].playerId, 'p2');
-      assert.equal(body.graphics[0].publicUrl, `https://scorekings-api.example.com/output/${filename}`);
+      const graphicFilename = path.basename(body.graphics[0].filePath);
+      assert.equal(
+        body.graphics[0].publicUrl,
+        `https://scorekings-api.example.com/output/${graphicFilename}`,
+      );
       assert.equal(
         body.graphics[0].downloadUrl,
-        `https://scorekings-api.example.com/api/games/flyers/${filename}/download`,
+        `https://scorekings-api.example.com/api/games/flyers/${graphicFilename}/download`,
       );
       assert.equal(savedPayload.gameId, 'game-101');
       assert.equal(savedPayload.status, 'COMPLETED');
@@ -202,7 +208,7 @@ test('finalize persists the supplied game ID and returns generated graphics', as
       });
       assert.equal(body.game.players[0].photos, undefined);
       assert.equal(body.game.teamA.logo, undefined);
-      assert.equal(renderCalls, 1);
+      assert.equal(renderedPlayers.length, 2);
 
       const downloadUrl = new URL(body.graphics[0].downloadUrl);
       downloadUrl.host = new URL(baseUrl).host;
@@ -214,8 +220,81 @@ test('finalize persists the supplied game ID and returns generated graphics', as
       assert.deepEqual(Buffer.from(await downloadResponse.arrayBuffer()), flyerBuffer);
     });
   } finally {
-    await rm(flyerPath, { force: true });
+    await Promise.all(flyerPaths.map((flyerPath) => rm(flyerPath, { force: true })));
   }
+});
+
+test('finalize evaluates and generates a five-player graphic pack concurrently', async () => {
+  const statUpdates = [];
+  let savedGame;
+  let activeGenerations = 0;
+  let maxActiveGenerations = 0;
+  const fivePlayerPayload = {
+    ...payload,
+    players: Array.from({ length: 5 }, (_, index) => ({
+      ...payload.players[0],
+      id: `p${index + 1}`,
+      name: `Player ${index + 1}`,
+      pts: index + 18,
+      photos: [pngDataUrl],
+    })),
+    boxScore: undefined,
+  };
+  const app = createTestApp({
+    GameModel: {
+      async findOneAndUpdate(_filter, update) {
+        if (update.$push) {
+          savedGame.generatedMedia.push(...update.$push.generatedMedia.$each);
+          return savedGame;
+        }
+        savedGame = {
+          ...update.$set,
+          _id: 'five-player-game',
+          generatedMedia: [],
+        };
+        return savedGame;
+      },
+    },
+    PlayerModel: {
+      async findOneAndUpdate(filter, update) { statUpdates.push({ filter, update }); },
+      async exists() { return null; },
+    },
+    publicBaseUrl: 'https://scorekings-api.example.com',
+    flyerGenerator: async (player) => {
+      activeGenerations += 1;
+      maxActiveGenerations = Math.max(maxActiveGenerations, activeGenerations);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      activeGenerations -= 1;
+      return {
+        filePath: `/tmp/${player.id}.jpg`,
+        publicUrl: `https://scorekings-api.example.com/output/${player.id}.jpg`,
+        downloadUrl: `https://scorekings-api.example.com/api/games/flyers/${player.id}.jpg/download`,
+      };
+    },
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/games/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(fivePlayerPayload),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.graphics.map((graphic) => graphic.playerId), ['p5', 'p4', 'p3', 'p2', 'p1']);
+    assert.equal(body.game.boxScore.length, 5);
+    assert.equal(body.game.generatedMedia.length, 5);
+    assert.equal(statUpdates.length, 5);
+    assert.equal(maxActiveGenerations, 5);
+    assert.deepEqual(body.graphics.map((graphic) => graphic.playerName), [
+      'Player 5',
+      'Player 4',
+      'Player 3',
+      'Player 2',
+      'Player 1',
+    ]);
+  });
 });
 
 test('invalid payload returns a consistent 400 response without persistence', async () => {
@@ -320,6 +399,10 @@ test('rejects an invalid raster asset with a clear JSON error before persistence
 });
 
 test('returns a clear gateway error when image generation fails', async () => {
+  const impressivePayload = {
+    ...payload,
+    players: [{ ...payload.players[0], pts: 18 }],
+  };
   const app = createTestApp({
     GameModel: {
       async findOneAndUpdate(_filter, update) {
@@ -335,7 +418,7 @@ test('returns a clear gateway error when image generation fails', async () => {
     const response = await fetch(`${baseUrl}/api/games/finalize`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(impressivePayload),
     });
     const body = await response.json();
 
@@ -381,6 +464,10 @@ test('persists games without an eligible flyer scorer', async () => {
 });
 
 test('rendering failure returns an error and does not report a generated graphic', async () => {
+  const impressivePayload = {
+    ...payload,
+    players: [{ ...payload.players[0], pts: 18 }],
+  };
   let renderCalls = 0;
   const app = createTestApp({
     GameModel: {
@@ -398,7 +485,7 @@ test('rendering failure returns an error and does not report a generated graphic
     const response = await fetch(`${baseUrl}/api/games/finalize`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(impressivePayload),
     });
     const body = await response.json();
 
