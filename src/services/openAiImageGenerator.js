@@ -56,7 +56,7 @@ async function loadTemplateReference(templateImage) {
   }
 }
 
-function buildPrompt(player, game, extraPrompt, playerImageCount, performanceTier, visualTier) {
+function buildPrompt(player, game, extraPrompt, playerImageCount, tier) {
   const teamName = player.team === 'Team A' ? game.teamA.name : game.teamB.name;
   const isReboundDoubleDouble =
     player.reb >= 10 &&
@@ -66,8 +66,7 @@ function buildPrompt(player, game, extraPrompt, playerImageCount, performanceTie
     ? { label: 'REBOUNDS', value: player.reb }
     : { label: 'POINTS', value: player.pts };
   const instructions = [
-    'Create one complete, original portrait-format basketball player spotlight flyer as finished artwork.',
-    'This single-player spotlight must feel complete regardless of the stat total; do not imply an unprovided achievement or exceptional performance.',
+    'Create one complete, original portrait-format basketball achievement flyer as finished artwork.',
     `Keep the established baseline composition: one prominent head-and-shoulders player portrait and a clear hierarchy for player name, jersey number, team, and the featured ${featuredStat.label.toLowerCase()} stat, with all content fully inside the portrait canvas. Preserve this composition across themes; tier styling changes visual treatment only.`,
     'Reference image 1 is the supplied flyer example and the primary visual art-direction reference. Draw from its gritty monochrome sports-editorial texture, torn-paper layering, bold condensed typography, dramatic contrast, and energetic collage treatment, while adapting the composition to the fixed baseline hierarchy and selected tier theme. Do not copy its text, numbers, athlete, face, uniform, pose, logos, slogans, or exact layout.',
     `Reference images 2 through ${playerImageCount + 1} show the same featured player. Use them only to accurately identify that person; preserve their recognizable face, skin tone, hair, and natural appearance without inferring or changing their gender or body type. Create exactly one prominent, realistic head-and-shoulders portrait of this player. Keep the image framed at the head and shoulders; do not depict a full body, invent body details or poses, or add duplicate portraits or extra people.`,
@@ -83,20 +82,11 @@ function buildPrompt(player, game, extraPrompt, playerImageCount, performanceTie
     instructions.push(`Optional additional art direction, if compatible with the fixed player details and design constraints: ${extraPrompt}`);
   }
 
-  if (visualTier === 3) {
+  if (tier === 3) {
     instructions.push(
-      'Apply a premium, elite scouting-card visual treatment over the fixed baseline composition: use an obsidian/metallic slate canvas (#050505), chrome-and-gold gradient text fills, subtle non-text crown motifs in the background, and magazine-cover-style dynamic border breaks. These are visual design cues only; do not render a theme title or unearned achievement label. Do not change the composition.',
+      'Apply the TIER 3 "King of the Court" luxury theme over the fixed baseline composition: use an obsidian/metallic slate canvas (#050505), chrome-and-gold gradient text fills, subtle non-text crown watermark motifs in the background, and magazine-cover-style dynamic border breaks. Do not change the composition or add factual copy.',
     );
-    if (performanceTier >= 2) {
-      instructions.push(
-        'The player meets the performance threshold for a breakout. Include one clearly legible badge with the exact text "STAT BREAKOUT".',
-      );
-    } else {
-      instructions.push(
-        'Do not add a badge, tier name, achievement label, or claim of exceptional performance. Use only the permitted player details and featured stat as text.',
-      );
-    }
-  } else if (visualTier === 2) {
+  } else if (tier === 2) {
     instructions.push(
       'Apply the TIER 2 "En Fuego" dark-mode theme over the fixed baseline composition: add electric neon-lime (#CCFF00) diagonal geometric slash accents, dynamic motion-blur highlights around the player photo cutout, and one clearly legible badge with the exact text "STAT BREAKOUT". Do not change the composition or add other statistics.',
     );
@@ -137,20 +127,12 @@ export async function generateFlyerImage({
     loadTemplateReference(templateImage),
   ]);
 
-  const performanceTier = evaluateGraphicTier(player);
-  const visualTier = game.players?.length === 1 ? 3 : performanceTier;
+  const tier = evaluateGraphicTier(player);
   const form = new FormData();
   form.append('model', process.env.OPENAI_IMAGE_MODEL || defaultImageModel);
   form.append(
     'prompt',
-    buildPrompt(
-      player,
-      game,
-      imageGeneration.prompt,
-      playerReferences.length,
-      performanceTier,
-      visualTier,
-    ),
+    buildPrompt(player, game, imageGeneration.prompt, playerReferences.length, tier),
   );
   form.append('size', imageGeneration.size || '1024x1536');
   form.append('quality', imageGeneration.quality || 'high');

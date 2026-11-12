@@ -73,8 +73,7 @@ test('uses the flyer example for art direction alongside player and team referen
   assert.match(form.get('prompt'), /TIER 1 standard-run theme/);
   assert.match(form.get('prompt'), /clean neutral lighting/);
   assert.doesNotMatch(form.get('prompt'), /En Fuego|King of the Court|STAT BREAKOUT/);
-  assert.match(form.get('prompt'), /one complete, original portrait-format basketball player spotlight flyer/);
-  assert.match(form.get('prompt'), /must feel complete regardless of the stat total/);
+  assert.match(form.get('prompt'), /one complete, original portrait-format basketball achievement flyer/);
   assert.match(form.get('prompt'), /Keep the established baseline composition/);
   assert.match(form.get('prompt'), /Create exactly one prominent, realistic head-and-shoulders portrait/);
   assert.match(form.get('prompt'), /do not depict a full body/);
@@ -136,31 +135,18 @@ test('injects deterministic theme tokens for each performance tier before the AP
     },
     {
       player: { pts: 25, reb: 4, ast: 2 },
-      expected: /premium, elite scouting-card visual treatment.*#050505.*chrome-and-gold.*crown.*border breaks.*exact text "STAT BREAKOUT"/s,
-      unexpected: /King of the Court/,
+      expected: /TIER 3 "King of the Court".*#050505.*chrome-and-gold.*crown.*border breaks/s,
+      unexpected: /STAT BREAKOUT/,
     },
     {
       player: { pts: 5, reb: 2, ast: 1, topPerformer: true },
-      expected: /premium, elite scouting-card visual treatment.*#050505.*chrome-and-gold.*exact text "STAT BREAKOUT"/s,
-      unexpected: /King of the Court/,
-    },
-    {
-      player: { pts: 2, reb: 1, ast: 0 },
-      solo: true,
-      expected: /premium, elite scouting-card visual treatment.*#050505.*chrome-and-gold/s,
-      unexpected: /STAT BREAKOUT|King of the Court/,
-    },
-    {
-      player: { pts: 18, reb: 3, ast: 2 },
-      solo: true,
-      expected: /premium, elite scouting-card visual treatment.*#050505.*chrome-and-gold.*exact text "STAT BREAKOUT"/s,
-      unexpected: /King of the Court/,
+      expected: /TIER 3 "King of the Court".*#050505.*chrome-and-gold/s,
+      unexpected: /STAT BREAKOUT/,
     },
   ];
 
   for (const {
     player: stats,
-    solo,
     expected,
     unexpected,
     featured,
@@ -180,7 +166,6 @@ test('injects deterministic theme tokens for each performance tier before the AP
       game: {
         teamA: { name: 'Red Team' },
         teamB: { name: 'Blue Team' },
-        ...(solo ? { players: [{ id: 'p1' }] } : {}),
       },
       playerImage: image,
       teamLogoImage: image,
