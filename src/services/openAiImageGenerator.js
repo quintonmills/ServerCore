@@ -66,7 +66,8 @@ function buildPrompt(player, game, extraPrompt, playerImageCount, tier) {
     ? { label: 'REBOUNDS', value: player.reb }
     : { label: 'POINTS', value: player.pts };
   const instructions = [
-    'Create one complete, original portrait-format basketball achievement flyer as finished artwork.',
+    'Create one complete, original portrait-format basketball player spotlight flyer as finished artwork.',
+    'This single-player spotlight must feel complete regardless of the stat total; do not imply an unprovided achievement or exceptional performance.',
     `Keep the established baseline composition: one prominent head-and-shoulders player portrait and a clear hierarchy for player name, jersey number, team, and the featured ${featuredStat.label.toLowerCase()} stat, with all content fully inside the portrait canvas. Preserve this composition across themes; tier styling changes visual treatment only.`,
     'Reference image 1 is the supplied flyer example and the primary visual art-direction reference. Draw from its gritty monochrome sports-editorial texture, torn-paper layering, bold condensed typography, dramatic contrast, and energetic collage treatment, while adapting the composition to the fixed baseline hierarchy and selected tier theme. Do not copy its text, numbers, athlete, face, uniform, pose, logos, slogans, or exact layout.',
     `Reference images 2 through ${playerImageCount + 1} show the same featured player. Use them only to accurately identify that person; preserve their recognizable face, skin tone, hair, and natural appearance without inferring or changing their gender or body type. Create exactly one prominent, realistic head-and-shoulders portrait of this player. Keep the image framed at the head and shoulders; do not depict a full body, invent body details or poses, or add duplicate portraits or extra people.`,

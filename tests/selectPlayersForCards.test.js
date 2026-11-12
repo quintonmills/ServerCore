@@ -28,6 +28,12 @@ test('does not mutate input and skips players without impressive stats', () => {
   assert.deepEqual(players, original);
 });
 
+test('selects a lone player regardless of stat line', () => {
+  const player = { id: 'target', pts: 2, reb: 1, ast: 0 };
+
+  assert.deepEqual(selectPlayersForCards([player]), [player]);
+});
+
 test('selects a top performer even without a standard stat threshold', () => {
   const players = [
     { id: 'ordinary', pts: 12, reb: 3, ast: 2 },

@@ -434,7 +434,10 @@ test('persists games without an eligible flyer scorer', async () => {
   let saveCalls = 0;
   const noEligibleScorer = {
     ...payload,
-    players: [{ ...payload.players[0], pts: 0 }],
+    players: [
+      { ...payload.players[0], pts: 0 },
+      { ...payload.players[0], id: 'p2', name: 'Jordan', pts: 0 },
+    ],
   };
   const app = createTestApp({
     GameModel: {
@@ -460,6 +463,49 @@ test('persists games without an eligible flyer scorer', async () => {
     assert.deepEqual(body.graphics, []);
     assert.equal(body.game.gameId, 'game-101');
     assert.equal(saveCalls, 1);
+  });
+});
+
+test('generates a graphic for a single submitted player without a breakout stat line', async () => {
+  let generatedPlayer;
+  const singlePlayerPayload = {
+    ...payload,
+    players: [{ ...payload.players[0], name: 'Montrez', pts: 2, reb: 1, ast: 0 }],
+  };
+  let savedGame;
+  const app = createTestApp({
+    GameModel: {
+      async findOneAndUpdate(_filter, update) {
+        if (update.$push) {
+          savedGame.generatedMedia.push(...update.$push.generatedMedia.$each);
+          return savedGame;
+        }
+        savedGame = { ...update.$set, _id: 'single-player-game', generatedMedia: [] };
+        return savedGame;
+      },
+    },
+    flyerGenerator: async (player) => {
+      generatedPlayer = player;
+      return {
+        filePath: '/tmp/montrez.jpg',
+        publicUrl: 'https://scorekings-api.example.com/output/montrez.jpg',
+        downloadUrl: 'https://scorekings-api.example.com/api/games/flyers/montrez.jpg/download',
+      };
+    },
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/games/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(singlePlayerPayload),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(generatedPlayer.name, 'Montrez');
+    assert.equal(body.graphics.length, 1);
+    assert.equal(body.graphics[0].playerName, 'Montrez');
   });
 });
 

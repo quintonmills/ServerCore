@@ -73,7 +73,8 @@ test('uses the flyer example for art direction alongside player and team referen
   assert.match(form.get('prompt'), /TIER 1 standard-run theme/);
   assert.match(form.get('prompt'), /clean neutral lighting/);
   assert.doesNotMatch(form.get('prompt'), /En Fuego|King of the Court|STAT BREAKOUT/);
-  assert.match(form.get('prompt'), /one complete, original portrait-format basketball achievement flyer/);
+  assert.match(form.get('prompt'), /one complete, original portrait-format basketball player spotlight flyer/);
+  assert.match(form.get('prompt'), /must feel complete regardless of the stat total/);
   assert.match(form.get('prompt'), /Keep the established baseline composition/);
   assert.match(form.get('prompt'), /Create exactly one prominent, realistic head-and-shoulders portrait/);
   assert.match(form.get('prompt'), /do not depict a full body/);
