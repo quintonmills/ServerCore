@@ -136,18 +136,31 @@ test('injects deterministic theme tokens for each performance tier before the AP
     },
     {
       player: { pts: 25, reb: 4, ast: 2 },
-      expected: /TIER 3 "King of the Court".*#050505.*chrome-and-gold.*crown.*border breaks/s,
-      unexpected: /STAT BREAKOUT/,
+      expected: /premium, elite scouting-card visual treatment.*#050505.*chrome-and-gold.*crown.*border breaks.*exact text "STAT BREAKOUT"/s,
+      unexpected: /King of the Court/,
     },
     {
       player: { pts: 5, reb: 2, ast: 1, topPerformer: true },
-      expected: /TIER 3 "King of the Court".*#050505.*chrome-and-gold/s,
-      unexpected: /STAT BREAKOUT/,
+      expected: /premium, elite scouting-card visual treatment.*#050505.*chrome-and-gold.*exact text "STAT BREAKOUT"/s,
+      unexpected: /King of the Court/,
+    },
+    {
+      player: { pts: 2, reb: 1, ast: 0 },
+      solo: true,
+      expected: /premium, elite scouting-card visual treatment.*#050505.*chrome-and-gold/s,
+      unexpected: /STAT BREAKOUT|King of the Court/,
+    },
+    {
+      player: { pts: 18, reb: 3, ast: 2 },
+      solo: true,
+      expected: /premium, elite scouting-card visual treatment.*#050505.*chrome-and-gold.*exact text "STAT BREAKOUT"/s,
+      unexpected: /King of the Court/,
     },
   ];
 
   for (const {
     player: stats,
+    solo,
     expected,
     unexpected,
     featured,
@@ -167,6 +180,7 @@ test('injects deterministic theme tokens for each performance tier before the AP
       game: {
         teamA: { name: 'Red Team' },
         teamB: { name: 'Blue Team' },
+        ...(solo ? { players: [{ id: 'p1' }] } : {}),
       },
       playerImage: image,
       teamLogoImage: image,
