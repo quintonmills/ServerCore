@@ -70,9 +70,8 @@ test('uses the flyer example for art direction alongside player and team referen
   assert.match(form.get('prompt'), /primary visual art-direction reference/);
   assert.match(form.get('prompt'), /torn-paper layering/);
   assert.match(form.get('prompt'), /Do not copy its text, numbers, athlete/);
-  assert.match(form.get('prompt'), /TIER 1 standard-run theme/);
-  assert.match(form.get('prompt'), /clean neutral lighting/);
-  assert.doesNotMatch(form.get('prompt'), /En Fuego|King of the Court|STAT BREAKOUT/);
+  assert.match(form.get('prompt'), /TIER 2 "En Fuego".*#CCFF00.*STAT BREAKOUT/s);
+  assert.doesNotMatch(form.get('prompt'), /King of the Court/);
   assert.match(form.get('prompt'), /one complete, original portrait-format basketball achievement flyer/);
   assert.match(form.get('prompt'), /Keep the established baseline composition/);
   assert.match(form.get('prompt'), /Create exactly one prominent, realistic head-and-shoulders portrait/);
@@ -105,17 +104,17 @@ test('injects deterministic theme tokens for each performance tier before the AP
   const generatedImage = createGeneratedJpegBuffer();
   const cases = [
     {
-      player: { pts: 14, reb: 5, ast: 3 },
+      player: { pts: 8, reb: 5, ast: 3 },
       expected: /TIER 1 standard-run theme.*clean neutral lighting/s,
       unexpected: /STAT BREAKOUT|King of the Court/,
     },
     {
-      player: { pts: 18, reb: 3, ast: 2 },
+      player: { pts: 12, reb: 3, ast: 2 },
       expected: /TIER 2 "En Fuego".*#CCFF00.*STAT BREAKOUT/s,
       unexpected: /King of the Court/,
     },
     {
-      player: { pts: 12, reb: 4, ast: 8 },
+      player: { pts: 3, reb: 4, ast: 6 },
       expected: /TIER 2 "En Fuego".*#CCFF00.*STAT BREAKOUT/s,
       unexpected: /King of the Court/,
     },
@@ -128,13 +127,13 @@ test('injects deterministic theme tokens for each performance tier before the AP
     },
     {
       player: { pts: 18, reb: 10, ast: 1 },
-      expected: /TIER 2 "En Fuego".*#CCFF00.*STAT BREAKOUT/s,
-      unexpected: /King of the Court/,
+      expected: /TIER 3 "King of the Court".*#050505.*chrome-and-gold/s,
+      unexpected: /STAT BREAKOUT/,
       featured: /Display the exact featured stat as "POINTS" and the amount "18"/,
       notFeatured: /Display the exact featured stat as "REBOUNDS"/,
     },
     {
-      player: { pts: 25, reb: 4, ast: 2 },
+      player: { pts: 18, reb: 4, ast: 2 },
       expected: /TIER 3 "King of the Court".*#050505.*chrome-and-gold.*crown.*border breaks/s,
       unexpected: /STAT BREAKOUT/,
     },

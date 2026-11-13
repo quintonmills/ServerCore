@@ -13,14 +13,14 @@ test('selects up to five impressive stat lines ranked by points, rebounds, then 
     { id: 'ordinary', pts: 17, reb: 4, ast: 2 },
   ];
 
-  assert.deepEqual(selectPlayersForCards(players).map((player) => player.id), ['b', 'f', 'a', 'c', 'd']);
+  assert.deepEqual(selectPlayersForCards(players).map((player) => player.id), ['b', 'f', 'a', 'ordinary', 'c']);
 });
 
 test('does not mutate input and skips players without impressive stats', () => {
   const players = [
     { id: 'a', pts: 0, reb: 1, ast: 1 },
-    { id: 'b', pts: 17, reb: 0, ast: 0 },
-    { id: 'c', pts: 18, reb: 0, ast: 0 },
+    { id: 'b', pts: 11, reb: 0, ast: 0 },
+    { id: 'c', pts: 12, reb: 0, ast: 0 },
   ];
   const original = structuredClone(players);
 
@@ -30,8 +30,8 @@ test('does not mutate input and skips players without impressive stats', () => {
 
 test('selects a top performer even without a standard stat threshold', () => {
   const players = [
-    { id: 'ordinary', pts: 12, reb: 3, ast: 2 },
-    { id: 'top-performer', pts: 12, reb: 3, ast: 2, topPerformer: true },
+    { id: 'ordinary', pts: 11, reb: 3, ast: 2 },
+    { id: 'top-performer', pts: 11, reb: 3, ast: 2, topPerformer: true },
   ];
 
   assert.deepEqual(selectPlayersForCards(players).map((player) => player.id), ['top-performer']);

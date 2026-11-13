@@ -174,8 +174,8 @@ test('finalize persists the supplied game ID and returns generated graphics', as
       assert.equal(body.game.events.length, 2);
       assert.equal(body.game.boxScore.length, 3);
       assert.equal(body.game.generatedMedia[0].publicUrl, body.graphics[0].publicUrl);
-      assert.equal(body.graphics.length, 2);
-      assert.deepEqual(renderedPlayers, ['p2', 'p3']);
+      assert.equal(body.graphics.length, 3);
+      assert.deepEqual(renderedPlayers, ['p2', 'p3', 'p1']);
       assert.equal(body.graphics[0].playerId, 'p2');
       const graphicFilename = path.basename(body.graphics[0].filePath);
       assert.equal(
@@ -208,7 +208,7 @@ test('finalize persists the supplied game ID and returns generated graphics', as
       });
       assert.equal(body.game.players[0].photos, undefined);
       assert.equal(body.game.teamA.logo, undefined);
-      assert.equal(renderedPlayers.length, 2);
+      assert.equal(renderedPlayers.length, 3);
 
       const downloadUrl = new URL(body.graphics[0].downloadUrl);
       downloadUrl.host = new URL(baseUrl).host;
