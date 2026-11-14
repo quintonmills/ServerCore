@@ -3,6 +3,7 @@ import path from 'node:path';
 import mongoose from 'mongoose';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
+import Game from './models/Game.js';
 
 const DEFAULT_MONGO_URI = 'mongodb://127.0.0.1:27017/scorekings';
 
@@ -35,6 +36,21 @@ export async function startServer() {
   } catch (error) {
     console.error(`[startup] MongoDB connection failed: ${safeConnectionError(error)}`);
     throw error;
+  }
+
+  try {
+    await Game.collection.dropIndex('gameId_1');
+    console.log('[startup] Removed legacy unique gameId index');
+  } catch (error) {
+    const indexOrCollectionMissing =
+      error.code === 27 ||
+      error.code === 26 ||
+      error.codeName === 'IndexNotFound' ||
+      error.codeName === 'NamespaceNotFound';
+    if (!indexOrCollectionMissing) {
+      console.error(`[startup] Failed to remove legacy unique gameId index: ${safeConnectionError(error)}`);
+      throw error;
+    }
   }
 
   console.log(`[startup] MongoDB connection readyState: ${mongoose.connection.readyState}`);

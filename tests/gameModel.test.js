@@ -82,7 +82,7 @@ test('game schema stores an optional idempotency key', () => {
   ), true);
   assert.equal(Game.schema.indexes().some(([index, options]) =>
     index.gameId === 1 && options.unique,
-  ), true);
+  ), false);
 });
 
 test('game schema stores teams, box scores, play-by-play events, and generated media', () => {

@@ -62,7 +62,7 @@ The server waits for a successful MongoDB connection before it starts accepting 
 
 ### Finalize a game
 
-`POST /api/games/finalize` accepts JSON. The frontend-provided `gameId` is stored and returned unchanged and must uniquely identify a game session; quarter, clock, and game date are not required. Optionally provide an `idempotencyKey` and reuse it for retries; if omitted, `gameId` is used.
+`POST /api/games/finalize` accepts JSON. The frontend-provided `gameId` is stored and returned unchanged; quarter, clock, and game date are not required. Provide a unique `idempotencyKey` for each game session and reuse it for retries. If omitted, `gameId` is used as the key, so it must be unique for that session.
 
 ```json
 {
@@ -202,7 +202,7 @@ The API returns `200 OK` with the upserted game and a `graphics` array containin
 
 `publicUrl` previews the JPEG. `downloadUrl` is a QR-code-friendly HTTPS endpoint that serves the same JPEG with `Content-Disposition: attachment`; it does not expire while the flyer remains in storage. Configure `PUBLIC_BASE_URL` as the externally reachable HTTPS API origin and use durable storage for `output/` so downloads remain available after restarts and redeployments. If there are no eligible scorers with the required flyer assets, finalization still saves the game and returns an empty `graphics` array.
 
-Every valid finalization uses `idempotencyKey` as an atomic upsert key: sending it again updates that game rather than creating a duplicate. If omitted, `idempotencyKey` defaults to `gameId`. A unique sparse MongoDB index enforces this behavior. Player career totals (`pts`, `reb`, `ast`, `stl`, `blk`, `to`, and `gamesPlayed`) are updated atomically with `$inc` for every finalize request; repeated finalizations increment them again. Team and player records are upserted when team/player IDs are supplied. The response is `200 OK` for both first and repeated finalizations.
+Every valid finalization uses `idempotencyKey` as an atomic upsert key: sending it again updates that game rather than creating a duplicate. If omitted, `idempotencyKey` defaults to `gameId`. A unique sparse MongoDB index enforces this behavior; `gameId` itself is not unique, so submissions with different idempotency keys do not collide. On startup, the API removes the legacy unique `gameId_1` index if it exists. Player career totals (`pts`, `reb`, `ast`, `stl`, `blk`, `to`, and `gamesPlayed`) are updated atomically with `$inc` for every finalize request; repeated finalizations increment them again. Team and player records are upserted when team/player IDs are supplied. The response is `200 OK` for both first and repeated finalizations.
 
 Input is validated before persistence or rendering. Invalid fields, unexpected keys (including filesystem paths), unsupported player teams, non-numeric or negative scores/stats, and malformed JSON return a `400` JSON error. For example:
 
