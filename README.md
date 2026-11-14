@@ -62,7 +62,7 @@ The server waits for a successful MongoDB connection before it starts accepting 
 
 ### Finalize a game
 
-`POST /api/games/finalize` accepts JSON. The frontend-provided `gameId` is stored and returned unchanged; quarter, clock, and game date are not required. Optionally provide an `idempotencyKey` and reuse it for retries; if omitted, `gameId` is used.
+`POST /api/games/finalize` accepts JSON. The frontend-provided `gameId` is stored and returned unchanged and must uniquely identify a game session; quarter, clock, and game date are not required. Optionally provide an `idempotencyKey` and reuse it for retries; if omitted, `gameId` is used.
 
 ```json
 {

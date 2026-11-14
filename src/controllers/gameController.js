@@ -40,12 +40,13 @@ async function saveFinalizedGame(GameModel, payload) {
   } catch (error) {
     if (!isDuplicateKeyError(error)) throw error;
 
-    return GameModel.findOneAndUpdate({
-      $or: [
-        { idempotencyKey: payload.idempotencyKey },
-        { gameId: payload.gameId },
-      ],
-    }, { $set: payload }, { new: true, runValidators: true });
+    const finalizedGame = await GameModel.findOneAndUpdate(
+      { idempotencyKey: payload.idempotencyKey },
+      { $set: payload },
+      { new: true, runValidators: true },
+    );
+    if (!finalizedGame) throw error;
+    return finalizedGame;
   }
 }
 

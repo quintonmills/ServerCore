@@ -377,6 +377,88 @@ test('persists game history when optional flyer photos or team logos are not sup
   });
 });
 
+test('uses the game ID as a stable fallback key and keeps distinct games in separate records', async () => {
+  const savedGames = new Map();
+  const app = createTestApp({
+    GameModel: {
+      async findOneAndUpdate(filter, update, options) {
+        assert.deepEqual(options, {
+          new: true,
+          upsert: true,
+          runValidators: true,
+          setDefaultsOnInsert: true,
+        });
+        const key = filter.idempotencyKey;
+        const savedGame = {
+          ...(savedGames.get(key) || {}),
+          ...update.$set,
+          _id: savedGames.get(key)?._id || `mongo-${key}`,
+          generatedMedia: [],
+        };
+        savedGames.set(key, savedGame);
+        return savedGame;
+      },
+    },
+  });
+
+  await withServer(app, async (baseUrl) => {
+    for (const gameId of ['game-distinct-1', 'game-distinct-2', 'game-distinct-1']) {
+      const response = await fetch(`${baseUrl}/api/games/finalize`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...payload,
+          gameId,
+          players: [],
+          boxScore: [],
+        }),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.game.idempotencyKey, gameId);
+      assert.equal(body.game._id, `mongo-${gameId}`);
+    }
+
+    assert.equal(savedGames.size, 2);
+    assert.equal(savedGames.get('game-distinct-1').gameId, 'game-distinct-1');
+    assert.equal(savedGames.get('game-distinct-2').gameId, 'game-distinct-2');
+  });
+});
+
+test('duplicate-key recovery retries only the same idempotency key', async () => {
+  const filters = [];
+  const app = createTestApp({
+    GameModel: {
+      async findOneAndUpdate(filter) {
+        filters.push(filter);
+        if (filters.length === 1) {
+          throw Object.assign(new Error('Duplicate game ID'), { code: 11000 });
+        }
+        return null;
+      },
+    },
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/games/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...payload,
+        idempotencyKey: 'a-different-game',
+        players: [],
+        boxScore: [],
+      }),
+    });
+
+    assert.equal(response.status, 500);
+    assert.deepEqual(filters, [
+      { idempotencyKey: 'a-different-game' },
+      { idempotencyKey: 'a-different-game' },
+    ]);
+  });
+});
+
 test('rejects an invalid raster asset with a clear JSON error before persistence', async () => {
   let saveCalls = 0;
   const invalidPayload = structuredClone(payload);
@@ -476,12 +558,15 @@ test('rendering failure returns an error and does not report a generated graphic
   const impressivePayload = {
     ...payload,
     players: [{ ...payload.players[0], pts: 18 }],
+    boxScore: [{ ...payload.boxScore[0], PTS: 18 }],
   };
   let renderCalls = 0;
+  let savedPayload;
   const app = createTestApp({
     GameModel: {
-      async findOneAndUpdate() {
-        return payload;
+      async findOneAndUpdate(_filter, update) {
+        savedPayload = update.$set;
+        return { ...savedPayload, generatedMedia: [] };
       },
     },
     flyerGenerator: async () => {
@@ -501,6 +586,8 @@ test('rendering failure returns an error and does not report a generated graphic
     assert.equal(response.status, 500);
     assert.equal(body.error.code, 'INTERNAL_SERVER_ERROR');
     assert.equal(renderCalls, 1);
+    assert.equal(savedPayload.gameId, impressivePayload.gameId);
+    assert.equal(savedPayload.boxScore[0].PTS, 18);
   });
 });
 

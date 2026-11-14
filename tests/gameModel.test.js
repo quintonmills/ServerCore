@@ -17,6 +17,9 @@ test('game schema stores reference images and image-generation settings', () => 
     players: [
       {
         id: 'p1',
+        firstName: 'Marcus',
+        lastName: 'Example',
+        teamId: 'red-team',
         team: 'Team A',
         jersey: '3',
         name: 'Marcus',
@@ -55,6 +58,9 @@ test('game schema stores reference images and image-generation settings', () => 
   assert.equal(game.validateSync(), undefined);
   assert.equal(game.teamA.logo, 'data:image/png;base64,aGVsbG8=');
   assert.equal(game.players[0].photos.length, 3);
+  assert.equal(game.players[0].firstName, 'Marcus');
+  assert.equal(game.players[0].lastName, 'Example');
+  assert.equal(game.players[0].teamId, 'red-team');
   assert.equal(game.players[1].photos, undefined);
   assert.equal(game.imageGeneration.prompt, 'Arena spotlight');
 });
@@ -74,6 +80,9 @@ test('game schema stores an optional idempotency key', () => {
   assert.equal(Game.schema.indexes().some(([index, options]) =>
     index.idempotencyKey === 1 && options.unique && options.sparse,
   ), true);
+  assert.equal(Game.schema.indexes().some(([index, options]) =>
+    index.gameId === 1 && options.unique,
+  ), true);
 });
 
 test('game schema stores teams, box scores, play-by-play events, and generated media', () => {
@@ -87,7 +96,26 @@ test('game schema stores teams, box scores, play-by-play events, and generated m
       away: { teamId: 'blue', name: 'Blue Team', score: 18 },
     },
     players: [],
-    boxScore: [{ playerId: 'player-1', PTS: 14, REB: 5 }],
+    boxScore: [{
+      playerId: 'player-1',
+      PTS: 14,
+      REB: 5,
+      AST: 3,
+      STL: 1,
+      BLK: 2,
+      TOV: 1,
+      MIN: 32,
+      FG: 6,
+      FGA: 12,
+      FG3: 2,
+      FG3A: 5,
+      FT: 2,
+      FTA: 3,
+      OREB: 1,
+      DREB: 4,
+      PF: 2,
+      PLUS_MINUS: -3,
+    }],
     events: [{ type: 'shot_made', period: 1, points: 2 }],
     generatedMedia: [{
       type: 'flyer',
@@ -125,6 +153,8 @@ test('game schema stores teams, box scores, play-by-play events, and generated m
 
   assert.equal(game.validateSync(), undefined);
   assert.equal(game.boxScore[0].PTS, 14);
+  assert.equal(game.boxScore[0].PLUS_MINUS, -3);
+  assert.equal(game.boxScore[0].FG3A, 5);
   assert.equal(game.events[0].type, 'shot_made');
   assert.equal(game.generatedMedia[0].downloadUrl, 'https://api.example.com/flyer/download');
   assert.equal(game.teams.home.teamId, 'red');

@@ -97,6 +97,9 @@ const metadataSchema = new mongoose.Schema(
 const playerSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, maxlength: 100 },
+    firstName: { type: String, maxlength: 100 },
+    lastName: { type: String, maxlength: 100 },
+    teamId: { type: String, maxlength: 100 },
     team: { type: String, required: true, enum: ['Team A', 'Team B'] },
     jersey: { type: String, required: true, maxlength: 10 },
     name: { type: String, required: true, maxlength: 200 },
