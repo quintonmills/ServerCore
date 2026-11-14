@@ -90,7 +90,7 @@ Example request shape (replace each image placeholder with a real base64 data UR
 }
 ```
 
-Use `curl --request POST "$PUBLIC_BASE_URL/api/games/finalize" --header 'Content-Type: application/json' --data-binary @payload.json` after saving a complete request with real image data URLs to `payload.json`. A successful response contains up to five graphics, each with `publicUrl` for preview and `downloadUrl` for QR-code downloads. Open the preview URLs to check the JPEGs; request a `downloadUrl` to verify that its JPEG is served with an attachment disposition.
+Use `curl --request POST "$PUBLIC_BASE_URL/api/games/finalize" --header 'Content-Type: application/json' --data-binary @payload.json` after saving a complete request with real image data URLs to `payload.json`. The response contains up to five graphics, each with `publicUrl` for preview and `downloadUrl` for QR-code downloads, and a `flyerGeneration.status` field. A `failed` flyer status does not mean the game was lost: retry with `curl --request POST "$PUBLIC_BASE_URL/api/games/pilot-game-001/flyers/retry"`. Finalize retries must use the same `gameId` and identical content; changed content with an existing ID returns `409 GAME_CONFLICT`. Open preview URLs to check the JPEGs; request a `downloadUrl` to verify that its JPEG is served with an attachment disposition.
 
 ## Generated JPEG storage
 

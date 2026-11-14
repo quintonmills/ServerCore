@@ -66,6 +66,69 @@ function createTestApp(options = {}) {
   });
 }
 
+function createGameModel(onCreate = () => {}) {
+  const games = new Map();
+  return {
+    async findOneAndUpdate(filter, update) {
+      let game = games.get(filter.gameId);
+      if (filter.payloadHash?.$exists === false) {
+        if (!game || game.payloadHash !== undefined) return null;
+        game.payloadHash = update.$set.payloadHash;
+        return game;
+      }
+      if (typeof filter.payloadHash === 'string') {
+        if (game && game.payloadHash !== filter.payloadHash) {
+          const error = new Error('Duplicate game ID');
+          error.code = 11000;
+          throw error;
+        }
+        if (!game) {
+          game = {
+            ...update.$setOnInsert,
+            _id: 'mongo-game-id',
+            generatedMedia: [],
+          };
+          games.set(filter.gameId, game);
+          onCreate(game, update.$setOnInsert);
+        }
+        return game;
+      }
+
+      if (!game) return null;
+      const eligibleStates = filter.$or?.some((condition) => {
+        const status = condition['flyerGeneration.status'];
+        if (status?.$in) return status.$in.includes(game.flyerGeneration.status);
+        return status === game.flyerGeneration.status &&
+          game.flyerGeneration.updatedAt < condition['flyerGeneration.updatedAt'].$lt;
+      });
+      if (filter.$or && !eligibleStates) {
+        return null;
+      }
+      for (const [key, value] of Object.entries(update.$set || {})) {
+        const [parent, child] = key.split('.');
+        if (child) game[parent][child] = value;
+        else game[key] = value;
+      }
+      for (const key of Object.keys(update.$unset || {})) {
+        const [parent, child] = key.split('.');
+        if (child) delete game[parent][child];
+        else delete game[key];
+      }
+      for (const [key, value] of Object.entries(update.$inc || {})) {
+        const [parent, child] = key.split('.');
+        game[parent][child] += value;
+      }
+      if (update.$push?.generatedMedia) {
+        game.generatedMedia.push(...update.$push.generatedMedia.$each);
+      }
+      return game;
+    },
+    async findOne(filter) {
+      return games.get(filter.gameId) || null;
+    },
+  };
+}
+
 async function withServer(app, run) {
   const server = createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -115,23 +178,11 @@ test('finalize persists the supplied game ID and returns generated graphics', as
       },
     ],
   };
-  const GameModel = {
-    async findOneAndUpdate(filter, update) {
-      if (update.$push) {
-        savedGame.generatedMedia.push(...update.$push.generatedMedia.$each);
-        return savedGame;
-      }
-      savedPayload = update.$set;
-      assert.deepEqual(filter, { gameId: 'game-101' });
-      savedGame = {
-        ...savedPayload,
-        _id: 'mongo-game-id',
-        generatedMedia: [],
-        createdAt: new Date('2026-01-01T00:00:00.000Z'),
-      };
-      return savedGame;
-    },
-  };
+  const GameModel = createGameModel((game, gamePayload) => {
+    savedPayload = gamePayload;
+    savedGame = game;
+    savedGame._id = 'mongo-game-id';
+  });
   const app = createTestApp({
     GameModel,
     PlayerModel: {
@@ -193,7 +244,10 @@ test('finalize persists the supplied game ID and returns generated graphics', as
       assert.equal(savedPayload.events[0].action, 'PTS_2');
       assert.equal(savedPayload.events[0].resultingScore.teamA, 2);
       assert.equal(statUpdates.length, 3);
-      assert.deepEqual(statUpdates[0].filter, { playerId: 'p1' });
+      assert.deepEqual(statUpdates[0].filter, {
+        playerId: 'p1',
+        'careerStats.appliedGameIds': { $ne: 'game-101' },
+      });
       assert.equal(statUpdates[0].update.$inc['careerStats.pts'], 14);
       assert.equal(statUpdates[0].update.$inc['careerStats.gamesPlayed'], 1);
       assert.equal(savedPayload.metadata.verifiedForLicensing, true);
@@ -241,20 +295,7 @@ test('finalize evaluates and generates a five-player graphic pack concurrently',
     boxScore: undefined,
   };
   const app = createTestApp({
-    GameModel: {
-      async findOneAndUpdate(_filter, update) {
-        if (update.$push) {
-          savedGame.generatedMedia.push(...update.$push.generatedMedia.$each);
-          return savedGame;
-        }
-        savedGame = {
-          ...update.$set,
-          _id: 'five-player-game',
-          generatedMedia: [],
-        };
-        return savedGame;
-      },
-    },
+    GameModel: createGameModel(),
     PlayerModel: {
       async findOneAndUpdate(filter, update) { statUpdates.push({ filter, update }); },
       async exists() { return null; },
@@ -335,12 +376,10 @@ test('persists game history when optional flyer photos or team logos are not sup
   delete incompletePayload.players[0].photos;
   delete incompletePayload.teamA.logo;
   const app = createTestApp({
-    GameModel: {
-      async findOneAndUpdate(_filter, update) {
-        savedPayload = update.$set;
-        return { ...savedPayload, _id: 'saved-without-flyer', generatedMedia: [] };
-      },
-    },
+    GameModel: createGameModel((game, gamePayload) => {
+      savedPayload = gamePayload;
+      game._id = 'saved-without-flyer';
+    }),
     flyerGenerator: async () => {
       throw new Error('Renderer must not be called');
     },
@@ -398,17 +437,13 @@ test('rejects an invalid raster asset with a clear JSON error before persistence
   });
 });
 
-test('returns a clear gateway error when image generation fails', async () => {
+test('persists flyer failure status without failing game finalization', async () => {
   const impressivePayload = {
     ...payload,
     players: [{ ...payload.players[0], pts: 18 }],
   };
   const app = createTestApp({
-    GameModel: {
-      async findOneAndUpdate(_filter, update) {
-        return update.$set;
-      },
-    },
+    GameModel: createGameModel(),
     flyerGenerator: async () => {
       throw new ImageGenerationError();
     },
@@ -422,11 +457,20 @@ test('returns a clear gateway error when image generation fails', async () => {
     });
     const body = await response.json();
 
-    assert.equal(response.status, 502);
-    assert.deepEqual(body.error, {
-      code: 'IMAGE_GENERATION_FAILED',
-      message: 'The image-generation service could not create a valid flyer image.',
-    });
+    assert.equal(response.status, 200);
+    assert.equal(body.game.status, 'COMPLETED');
+    assert.equal(body.game.flyerGeneration.status, 'failed');
+    assert.equal(
+      body.game.flyerGeneration.lastError,
+      'Flyer generation failed. Retry the flyer job to try again.',
+    );
+    assert.deepEqual(body.graphics, []);
+
+    const statusResponse = await fetch(`${baseUrl}/api/games/game-101/flyers`);
+    const status = await statusResponse.json();
+    assert.equal(statusResponse.status, 200);
+    assert.equal(status.flyerGeneration.status, 'failed');
+    assert.deepEqual(status.graphics, []);
   });
 });
 
@@ -437,12 +481,9 @@ test('persists games without an eligible flyer scorer', async () => {
     players: [{ ...payload.players[0], pts: 0 }],
   };
   const app = createTestApp({
-    GameModel: {
-      async findOneAndUpdate(_filter, update) {
-        saveCalls += 1;
-        return { ...update.$set, _id: 'saved-without-scorer', generatedMedia: [] };
-      },
-    },
+    GameModel: createGameModel(() => {
+      saveCalls += 1;
+    }),
     flyerGenerator: async () => {
       throw new Error('Renderer must not be called');
     },
@@ -463,21 +504,105 @@ test('persists games without an eligible flyer scorer', async () => {
   });
 });
 
-test('rendering failure returns an error and does not report a generated graphic', async () => {
+test('repeated finalization applies career totals once and rejects a conflicting game ID', async () => {
+  const replayPayload = structuredClone(payload);
+  delete replayPayload.players[0].photos;
+  delete replayPayload.teamA.logo;
+  const appliedGameIds = new Set();
+  const totals = { pts: 0, gamesPlayed: 0 };
+  let careerUpdateCalls = 0;
+  const app = createTestApp({
+    GameModel: createGameModel(),
+    PlayerModel: {
+      async findOneAndUpdate(filter, update) {
+        careerUpdateCalls += 1;
+        assert.deepEqual(filter, {
+          playerId: 'p1',
+          'careerStats.appliedGameIds': { $ne: 'game-101' },
+        });
+        if (appliedGameIds.has(update.$addToSet['careerStats.appliedGameIds'])) return;
+        appliedGameIds.add(update.$addToSet['careerStats.appliedGameIds']);
+        totals.pts += update.$inc['careerStats.pts'];
+        totals.gamesPlayed += update.$inc['careerStats.gamesPlayed'];
+      },
+    },
+  });
+
+  await withServer(app, async (baseUrl) => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await fetch(`${baseUrl}/api/games/finalize`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(replayPayload),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.game.payloadHash, undefined);
+    }
+
+    const conflictingResponse = await fetch(`${baseUrl}/api/games/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...replayPayload, location: 'Different game' }),
+    });
+    const conflict = await conflictingResponse.json();
+    assert.equal(conflictingResponse.status, 409);
+    assert.equal(conflict.error.code, 'GAME_CONFLICT');
+    assert.equal(careerUpdateCalls, 2);
+    assert.deepEqual(totals, { pts: 14, gamesPlayed: 1 });
+  });
+});
+
+test('a matching pre-ledger game is migrated without incrementing its career totals again', async () => {
+  const replayPayload = structuredClone(payload);
+  delete replayPayload.players[0].photos;
+  delete replayPayload.teamA.logo;
+  let storedGame;
+  let incrementCalls = 0;
+  let markerCalls = 0;
+  const app = createTestApp({
+    GameModel: createGameModel((game) => {
+      storedGame = game;
+    }),
+    PlayerModel: {
+      async findOneAndUpdate(_filter, update) {
+        if (update.$inc) incrementCalls += 1;
+        if (update.$addToSet && !update.$inc) markerCalls += 1;
+      },
+    },
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const finalize = () => fetch(`${baseUrl}/api/games/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(replayPayload),
+    });
+    assert.equal((await finalize()).status, 200);
+    delete storedGame.payloadHash;
+    assert.equal((await finalize()).status, 200);
+    assert.equal(incrementCalls, 1);
+    assert.equal(markerCalls, 1);
+    assert.match(storedGame.payloadHash, /^[a-f0-9]{64}$/);
+  });
+});
+
+test('generic flyer failure is recorded and can be retried without resaving the game', async () => {
   const impressivePayload = {
     ...payload,
     players: [{ ...payload.players[0], pts: 18 }],
   };
   let renderCalls = 0;
   const app = createTestApp({
-    GameModel: {
-      async findOneAndUpdate() {
-        return payload;
-      },
-    },
+    GameModel: createGameModel(),
     flyerGenerator: async () => {
       renderCalls += 1;
-      throw new Error('Rendering failed');
+      if (renderCalls === 1) throw new Error('Rendering failed');
+      return {
+        filePath: '/tmp/retry.jpg',
+        publicUrl: 'https://scorekings-api.example.com/output/retry.jpg',
+        downloadUrl: 'https://scorekings-api.example.com/api/games/flyers/retry.jpg/download',
+      };
     },
   });
 
@@ -489,9 +614,75 @@ test('rendering failure returns an error and does not report a generated graphic
     });
     const body = await response.json();
 
-    assert.equal(response.status, 500);
-    assert.equal(body.error.code, 'INTERNAL_SERVER_ERROR');
+    assert.equal(response.status, 200);
+    assert.equal(body.game.flyerGeneration.status, 'failed');
+    assert.equal(body.graphics.length, 0);
     assert.equal(renderCalls, 1);
+
+    const retryResponse = await fetch(`${baseUrl}/api/games/game-101/flyers/retry`, {
+      method: 'POST',
+    });
+    const retryBody = await retryResponse.json();
+    assert.equal(retryResponse.status, 200);
+    assert.equal(retryBody.game.flyerGeneration.status, 'completed');
+    assert.equal(retryBody.game.generatedMedia.length, 1);
+    assert.equal(retryBody.graphics[0].playerId, 'p1');
+    assert.equal(renderCalls, 2);
+
+    const statusResponse = await fetch(`${baseUrl}/api/games/game-101/flyers`);
+    const status = await statusResponse.json();
+    assert.equal(status.flyerGeneration.status, 'completed');
+    assert.equal(status.graphics.length, 1);
+  });
+});
+
+test('retry generates only missing flyers after a partial generation failure', async () => {
+  const multiPlayerPayload = {
+    ...payload,
+    players: [
+      { ...payload.players[0], id: 'p1', pts: 18 },
+      { ...payload.players[0], id: 'p2', name: 'Alex', pts: 17 },
+    ],
+    boxScore: undefined,
+  };
+  const calls = [];
+  let firstPlayerAttempts = 0;
+  const app = createTestApp({
+    GameModel: createGameModel(),
+    flyerGenerator: async (player) => {
+      calls.push(player.id);
+      if (player.id === 'p1' && firstPlayerAttempts++ === 0) {
+        throw new Error('Temporary provider error');
+      }
+      return {
+        filePath: `/tmp/${player.id}.jpg`,
+        publicUrl: `https://scorekings-api.example.com/output/${player.id}.jpg`,
+        downloadUrl: `https://scorekings-api.example.com/api/games/flyers/${player.id}.jpg/download`,
+      };
+    },
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const finalizeResponse = await fetch(`${baseUrl}/api/games/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(multiPlayerPayload),
+    });
+    const finalized = await finalizeResponse.json();
+    assert.equal(finalized.game.flyerGeneration.status, 'failed');
+    assert.deepEqual(finalized.graphics.map((graphic) => graphic.playerId), ['p2']);
+
+    const retryResponse = await fetch(`${baseUrl}/api/games/game-101/flyers/retry`, {
+      method: 'POST',
+    });
+    const retried = await retryResponse.json();
+    assert.equal(retried.game.flyerGeneration.status, 'completed');
+    assert.deepEqual(calls, ['p1', 'p2', 'p1']);
+    assert.deepEqual(
+      retried.game.generatedMedia.map((graphic) => graphic.playerId),
+      ['p2', 'p1'],
+    );
+    assert.deepEqual(retried.graphics.map((graphic) => graphic.playerId), ['p1']);
   });
 });
 

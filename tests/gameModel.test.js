@@ -50,6 +50,12 @@ test('game schema stores reference images and image-generation settings', () => 
       size: '1024x1536',
       quality: 'high',
     },
+    payloadHash: 'a'.repeat(64),
+    flyerGeneration: {
+      status: 'failed',
+      attemptCount: 1,
+      lastError: 'Flyer generation failed. Retry the flyer job to try again.',
+    },
   });
 
   assert.equal(game.validateSync(), undefined);
@@ -57,6 +63,9 @@ test('game schema stores reference images and image-generation settings', () => 
   assert.equal(game.players[0].photos.length, 3);
   assert.equal(game.players[1].photos, undefined);
   assert.equal(game.imageGeneration.prompt, 'Arena spotlight');
+  assert.equal(game.payloadHash, 'a'.repeat(64));
+  assert.equal(game.flyerGeneration.status, 'failed');
+  assert.equal(game.flyerGeneration.attemptCount, 1);
 });
 
 test('game schema stores teams, box scores, play-by-play events, and generated media', () => {
@@ -120,13 +129,14 @@ test('player and team schemas expose the identifiers and metric fields used by t
     lastName: 'Example',
     jersey: '3',
     teamId: 'red',
-    careerStats: { pts: 14, reb: 5, gamesPlayed: 1 },
+    careerStats: { pts: 14, reb: 5, gamesPlayed: 1, appliedGameIds: ['game-101'] },
   });
   const team = new Team({ teamId: 'red', name: 'Red Team', logoUrl: 'https://cdn.example.com/red.png' });
 
   assert.equal(player.validateSync(), undefined);
   assert.equal(team.validateSync(), undefined);
   assert.equal(player.careerStats.pts, 14);
+  assert.deepEqual(player.careerStats.appliedGameIds, ['game-101']);
   assert.equal(team.logoUrl, 'https://cdn.example.com/red.png');
 });
 

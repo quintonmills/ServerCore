@@ -9,6 +9,20 @@ const imageGenerationSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const flyerGenerationSchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: ['not_requested', 'pending', 'processing', 'completed', 'failed'],
+      default: 'not_requested',
+    },
+    attemptCount: { type: Number, min: 0, default: 0 },
+    lastError: { type: String, maxlength: 500 },
+    updatedAt: { type: Date },
+  },
+  { _id: false },
+);
+
 const teamSchema = new mongoose.Schema(
   {
     teamId: { type: String, maxlength: 100 },
@@ -120,6 +134,7 @@ const playerSchema = new mongoose.Schema(
 const gameSchema = new mongoose.Schema(
   {
     gameId: { type: String, required: true, unique: true, maxlength: 100 },
+    payloadHash: { type: String, match: /^[a-f0-9]{64}$/ },
     location: { type: String, required: true, maxlength: 200 },
     status: {
       type: String,
@@ -138,6 +153,7 @@ const gameSchema = new mongoose.Schema(
     boxScore: { type: [boxScoreSchema], default: [] },
     events: { type: [playByPlayEventSchema], default: [] },
     generatedMedia: { type: [generatedMediaSchema], default: [] },
+    flyerGeneration: { type: flyerGenerationSchema, default: () => ({}) },
     metadata: { type: metadataSchema, default: () => ({}) },
     imageGeneration: { type: imageGenerationSchema },
   },

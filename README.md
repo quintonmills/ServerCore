@@ -140,7 +140,7 @@ The server waits for a successful MongoDB connection before it starts accepting 
 
 The `players` array can include the full five-player lineup, with each player carrying their own stats and optional one to three `photos`. Supply PNG, JPEG, or WebP image data URLs, each no larger than 5 MB. The API saves stats for every player, but generates graphics only for the up to five highest-ranked impressive stat lines that also have one to three photos and a logo for their team. Rec-league thresholds are adjusted for 40-minute running-clock games: Tier 2 starts at 12+ points, 6+ assists, or a double-double in points/rebounds/assists; Tier 3 starts at 18+ points or `topPerformer: true`. Players are ranked by points, rebounds, then assists. Generation requests run in parallel. Missing graphic assets do not prevent the game and its stats from being persisted. The existing singular `photo` field remains accepted for older clients. `topPerformer` is an optional boolean on a player; setting it to `true` selects the top visual tier and qualifies the player for a graphic. `boxScore` is optional; when omitted, player stats are used to build it. `events` is an optional array of play-by-play objects; the typed fields are `period`, `playerId`, `action`, `timestamp`, and `resultingScore`. Existing event properties are retained for older clients. Box-score entries can provide uppercase or lowercase stat keys. `metadata` optionally stores `testMode` and `verifiedForLicensing` booleans. `teamId` values identify corresponding Team and Player records. `imageGeneration` is optional: `prompt` adds compatible art direction, `size` accepts `1024x1024`, `1024x1536`, `1536x1024`, or `auto`, and `quality` accepts `low`, `medium`, `high`, or `auto`. Defaults are `1024x1536` and `high`. Uploaded player photos, team logos, and image-generation settings are saved with the game in MongoDB; the API limits the complete stored game payload to 14 MB to stay safely below MongoDB's 16 MB document limit. Image data is omitted from the response to keep it small.
 
-The API returns `200 OK` with the upserted game and a `graphics` array containing zero to five generated flyers. Each graphic includes its player's ID and name, generated file path, public preview URL, and stable download URL:
+The API returns `200 OK` with the game and a `graphics` array containing zero to five generated flyers. Each graphic includes its player's ID and name, generated file path, public preview URL, and stable download URL. `game.flyerGeneration.status` reports `not_requested`, `pending`, `processing`, `completed`, or `failed`; a failed generation does not undo the saved game or career stats:
 
 ```json
 {
@@ -175,6 +175,10 @@ The API returns `200 OK` with the upserted game and a `graphics` array containin
     "events": [
       { "type": "shot_made", "period": 1, "playerId": "p1", "points": 2 }
     ],
+    "flyerGeneration": {
+      "status": "completed",
+      "attemptCount": 1
+    },
     "generatedMedia": [
       {
         "type": "flyer",
@@ -200,7 +204,9 @@ The API returns `200 OK` with the upserted game and a `graphics` array containin
 
 `publicUrl` previews the JPEG. `downloadUrl` is a QR-code-friendly HTTPS endpoint that serves the same JPEG with `Content-Disposition: attachment`; it does not expire while the flyer remains in storage. Configure `PUBLIC_BASE_URL` as the externally reachable HTTPS API origin and use durable storage for `output/` so downloads remain available after restarts and redeployments. If there are no eligible scorers with the required flyer assets, finalization still saves the game and returns an empty `graphics` array.
 
-Every valid finalization uses `gameId` as an upsert key: sending it again updates that game rather than creating a duplicate, and regenerates its cards. A unique MongoDB index enforces this behavior. Player career totals (`pts`, `reb`, `ast`, `stl`, `blk`, `to`, and `gamesPlayed`) are updated atomically with `$inc` for every finalize request; repeated finalizations increment them again. Team and player records are upserted when team/player IDs are supplied. The response is `200 OK` for both first and repeated finalizations.
+Finalization is idempotent by `gameId` and normalized request content. Replaying the same payload returns the existing game and does not create duplicate game records, career-stat contributions, or flyers. Reusing a `gameId` with different content returns `409 GAME_CONFLICT`; submit an intentional correction under a new game ID. Career-stat updates use an atomic per-player game-ID ledger, so retries after partial failures apply each game's totals once. Team and player records are upserted when team/player IDs are supplied.
+
+Flyer generation has an independent persisted lifecycle. If generation fails, finalization still returns `200 OK` with `game.flyerGeneration.status: "failed"` and no false success in the `graphics` array. Read current status and graphics with `GET /api/games/<gameId>/flyers`. Retry an eligible failed or pending job with `POST /api/games/<gameId>/flyers/retry`; successful flyers already saved for that game are retained, and only missing ones are regenerated. A job left `processing` by a server crash can be retried after its 30-minute lease expires. The retry response includes the updated game status and any newly generated graphics.
 
 Input is validated before persistence or rendering. Invalid fields, unexpected keys (including filesystem paths), unsupported player teams, non-numeric or negative scores/stats, and malformed JSON return a `400` JSON error. For example:
 
@@ -214,7 +220,7 @@ Input is validated before persistence or rendering. Invalid fields, unexpected k
 }
 ```
 
-If persistence or rendering fails, the API returns an error and never reports success. Persistence happens before rendering; therefore, on a rendering failure the saved game remains, and a repeated request can retry generation. Files already created during that failed request are removed where possible; cleanup failures are logged. Older cards from earlier successful requests are not automatically pruned.
+If core game persistence or career-stat updates fail, the API returns an error. Flyer-generation errors are tracked separately and do not convert a successfully saved game into a failed finalize response. Files created but not persisted because of a later storage error are removed where possible; cleanup failures are logged.
 
 ## Stat cards
 

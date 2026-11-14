@@ -9,6 +9,7 @@ const careerStatsSchema = new mongoose.Schema(
     blk: { type: Number, default: 0, min: 0 },
     to: { type: Number, default: 0, min: 0 },
     gamesPlayed: { type: Number, default: 0, min: 0 },
+    appliedGameIds: { type: [String], default: [] },
   },
   { _id: false },
 );

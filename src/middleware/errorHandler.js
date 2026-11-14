@@ -24,6 +24,7 @@ export function errorHandler(error, request, response, next) {
     error: {
       code:
         (knownImageError && error.code) ||
+        (error.code === 'GAME_CONFLICT' && error.code) ||
         (status === 400
           ? 'BAD_REQUEST'
           : status === 404
