@@ -2,6 +2,7 @@ import { InvalidImageAssetError, parseRasterImageDataUrl } from './rasterImage.j
 
 const rootFields = new Set([
   'gameId',
+  'idempotencyKey',
   'location',
   'teamA',
   'teamB',
@@ -354,6 +355,9 @@ export function validateGamePayload(payload) {
 
   checkUnknownFields(payload, rootFields, '', errors);
   checkString(payload.gameId, 'gameId', errors, 100);
+  if (payload.idempotencyKey !== undefined) {
+    checkString(payload.idempotencyKey, 'idempotencyKey', errors, 100);
+  }
   checkString(payload.location, 'location', errors, 200);
   validateTeam(payload.teamA, 'teamA', errors);
   validateTeam(payload.teamB, 'teamB', errors);

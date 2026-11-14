@@ -89,6 +89,7 @@ test('finalize persists the supplied game ID and returns generated graphics', as
   const flyerPaths = [];
   const multiPlayerPayload = {
     ...payload,
+    idempotencyKey: 'finalize-request-101',
     teamB: { ...payload.teamB, logo: pngDataUrl },
     boxScore: [
       ...payload.boxScore,
@@ -116,13 +117,19 @@ test('finalize persists the supplied game ID and returns generated graphics', as
     ],
   };
   const GameModel = {
-    async findOneAndUpdate(filter, update) {
+    async findOneAndUpdate(filter, update, options) {
       if (update.$push) {
         savedGame.generatedMedia.push(...update.$push.generatedMedia.$each);
         return savedGame;
       }
       savedPayload = update.$set;
-      assert.deepEqual(filter, { gameId: 'game-101' });
+      assert.deepEqual(filter, { idempotencyKey: 'finalize-request-101' });
+      assert.deepEqual(options, {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      });
       savedGame = {
         ...savedPayload,
         _id: 'mongo-game-id',
@@ -187,6 +194,7 @@ test('finalize persists the supplied game ID and returns generated graphics', as
         `https://scorekings-api.example.com/api/games/flyers/${graphicFilename}/download`,
       );
       assert.equal(savedPayload.gameId, 'game-101');
+      assert.equal(savedPayload.idempotencyKey, 'finalize-request-101');
       assert.equal(savedPayload.status, 'COMPLETED');
       assert.equal(savedPayload.boxScore[0].PTS, 14);
       assert.equal(savedPayload.events.length, 2);
@@ -359,6 +367,7 @@ test('persists game history when optional flyer photos or team logos are not sup
     assert.deepEqual(body.graphics, []);
     assert.equal(savedPayload.players[0].photos, undefined);
     assert.equal(savedPayload.status, 'COMPLETED');
+    assert.equal(savedPayload.idempotencyKey, 'game-101');
     assert.equal(savedPayload.startedAt, incompletePayload.startedAt);
     assert.equal(savedPayload.completedAt, incompletePayload.completedAt);
     assert.equal(savedPayload.boxScore[0].playerId, 'p1');

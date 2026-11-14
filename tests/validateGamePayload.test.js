@@ -28,6 +28,17 @@ test('accepts the frontend game-finalization payload without quarter, clock, or 
   assert.deepEqual(validateGamePayload(validPayload), []);
 });
 
+test('accepts a bounded optional idempotency key', () => {
+  const payload = structuredClone(validPayload);
+  payload.idempotencyKey = 'finalize-request-101';
+  assert.deepEqual(validateGamePayload(payload), []);
+
+  payload.idempotencyKey = ' ';
+  assert.ok(validateGamePayload(payload).some((error) =>
+    error.includes('idempotencyKey must be a non-empty string'),
+  ));
+});
+
 test('accepts an optional boolean top-performer flag and rejects other types', () => {
   const payload = structuredClone(validPayload);
   payload.players[0].topPerformer = true;

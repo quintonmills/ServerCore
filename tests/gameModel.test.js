@@ -59,6 +59,23 @@ test('game schema stores reference images and image-generation settings', () => 
   assert.equal(game.imageGeneration.prompt, 'Arena spotlight');
 });
 
+test('game schema stores an optional idempotency key', () => {
+  const game = new Game({
+    gameId: 'game-idempotency',
+    idempotencyKey: 'finalize-request-1',
+    location: 'ScoreKings Arena',
+    teamA: { name: 'Red Team', score: 2 },
+    teamB: { name: 'Blue Team', score: 0 },
+    players: [],
+  });
+
+  assert.equal(game.validateSync(), undefined);
+  assert.equal(game.idempotencyKey, 'finalize-request-1');
+  assert.equal(Game.schema.indexes().some(([index, options]) =>
+    index.idempotencyKey === 1 && options.unique && options.sparse,
+  ), true);
+});
+
 test('game schema stores teams, box scores, play-by-play events, and generated media', () => {
   const game = new Game({
     gameId: 'game-102',

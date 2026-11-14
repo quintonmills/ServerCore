@@ -33,18 +33,19 @@ function getPlayerImages(input) {
 async function saveFinalizedGame(GameModel, payload) {
   try {
     return await GameModel.findOneAndUpdate(
-      { gameId: payload.gameId },
+      { idempotencyKey: payload.idempotencyKey },
       { $set: payload },
       { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
     );
   } catch (error) {
     if (!isDuplicateKeyError(error)) throw error;
 
-    return GameModel.findOneAndUpdate(
-      { gameId: payload.gameId },
-      { $set: payload },
-      { new: true, runValidators: true },
-    );
+    return GameModel.findOneAndUpdate({
+      $or: [
+        { idempotencyKey: payload.idempotencyKey },
+        { gameId: payload.gameId },
+      ],
+    }, { $set: payload }, { new: true, runValidators: true });
   }
 }
 
@@ -156,6 +157,7 @@ export function createGameController({
     const awayTeam = request.body.teams?.away || request.body.teamB;
     const gamePayload = {
       ...request.body,
+      idempotencyKey: request.body.idempotencyKey ?? request.body.gameId,
       status: (request.body.status || 'COMPLETED').toUpperCase(),
       teams: {
         home: {
@@ -221,7 +223,7 @@ export function createGameController({
 
       if (generated.length > 0) {
         finalizedGame = await GameModel.findOneAndUpdate(
-          { gameId: gamePayload.gameId },
+          { idempotencyKey: gamePayload.idempotencyKey },
           {
             $push: {
               generatedMedia: {

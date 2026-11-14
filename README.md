@@ -22,20 +22,21 @@ Set the values in `.env`:
 | Variable | Description | Default |
 | --- | --- | --- |
 | `PORT` | HTTP port | `5000` |
-| `MONGODB_URI` | MongoDB connection string | Required |
+| `MONGO_URI` | MongoDB connection string | `mongodb://127.0.0.1:27017/scorekings` |
+| `MONGODB_URI` | Legacy alias for `MONGO_URI` | Unset |
 | `CORS_ORIGIN` | Allowed browser origin | `*` if unset |
 | `PUBLIC_BASE_URL` | Base URL used in returned graphic links | `http://localhost:<PORT>` |
 | `OPENAI_API_KEY` | API key used to generate player portraits with OpenAI | Required for flyer generation |
 | `OPENAI_IMAGE_MODEL` | OpenAI image-edit model | `gpt-image-2.5-sunburst` |
 | `FLYER_STYLE_REFERENCE_PATH` | Optional path to a PNG, JPEG, or WebP flyer style reference | Bundled `assets/flyer-style-reference.png` |
 
-For a MongoDB Atlas deployment, set `MONGODB_URI` to the Atlas connection string provided for your cluster. Keep credentials in the environment file or deployment secret store, not in source control. For a local MongoDB instance using Docker:
+For a MongoDB Atlas deployment, set `MONGO_URI` to the Atlas connection string provided for your cluster. `MONGODB_URI` remains supported as a legacy alias. Keep credentials in the environment file or deployment secret store, not in source control. For a local MongoDB instance using Docker:
 
 ```sh
 docker run --name scorekings-mongo -p 27017:27017 -d mongo:8
 ```
 
-For local development, set `MONGODB_URI=mongodb://127.0.0.1:27017/scorekings`. Start the API after MongoDB is available:
+For local development, the API defaults to `mongodb://127.0.0.1:27017/scorekings`. Set `MONGO_URI` to override it, then start the API after MongoDB is available:
 
 ```sh
 npm start
@@ -61,11 +62,12 @@ The server waits for a successful MongoDB connection before it starts accepting 
 
 ### Finalize a game
 
-`POST /api/games/finalize` accepts JSON. The frontend-provided `gameId` is stored and returned unchanged; quarter, clock, and game date are not required.
+`POST /api/games/finalize` accepts JSON. The frontend-provided `gameId` is stored and returned unchanged; quarter, clock, and game date are not required. Optionally provide an `idempotencyKey` and reuse it for retries; if omitted, `gameId` is used.
 
 ```json
 {
   "gameId": "game-101",
+  "idempotencyKey": "finalize-game-101",
   "location": "Marietta Rec League",
   "teamA": {
     "teamId": "red-team",
@@ -200,7 +202,7 @@ The API returns `200 OK` with the upserted game and a `graphics` array containin
 
 `publicUrl` previews the JPEG. `downloadUrl` is a QR-code-friendly HTTPS endpoint that serves the same JPEG with `Content-Disposition: attachment`; it does not expire while the flyer remains in storage. Configure `PUBLIC_BASE_URL` as the externally reachable HTTPS API origin and use durable storage for `output/` so downloads remain available after restarts and redeployments. If there are no eligible scorers with the required flyer assets, finalization still saves the game and returns an empty `graphics` array.
 
-Every valid finalization uses `gameId` as an upsert key: sending it again updates that game rather than creating a duplicate, and regenerates its cards. A unique MongoDB index enforces this behavior. Player career totals (`pts`, `reb`, `ast`, `stl`, `blk`, `to`, and `gamesPlayed`) are updated atomically with `$inc` for every finalize request; repeated finalizations increment them again. Team and player records are upserted when team/player IDs are supplied. The response is `200 OK` for both first and repeated finalizations.
+Every valid finalization uses `idempotencyKey` as an atomic upsert key: sending it again updates that game rather than creating a duplicate. If omitted, `idempotencyKey` defaults to `gameId`. A unique sparse MongoDB index enforces this behavior. Player career totals (`pts`, `reb`, `ast`, `stl`, `blk`, `to`, and `gamesPlayed`) are updated atomically with `$inc` for every finalize request; repeated finalizations increment them again. Team and player records are upserted when team/player IDs are supplied. The response is `200 OK` for both first and repeated finalizations.
 
 Input is validated before persistence or rendering. Invalid fields, unexpected keys (including filesystem paths), unsupported player teams, non-numeric or negative scores/stats, and malformed JSON return a `400` JSON error. For example:
 
