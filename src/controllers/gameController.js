@@ -10,23 +10,25 @@ function isDuplicateKeyError(error) {
 }
 
 function omitStoredImages(game) {
-  const safeGame = typeof game.toObject === 'function'
-    ? game.toObject()
-    : {
-        ...game,
-        media: {
-          ...game.media,
-          teamA: { ...game.media?.teamA },
-          teamB: { ...game.media?.teamB },
-          players: game.media?.players?.map((player) => ({ ...player })) || [],
-        },
-      };
-  delete safeGame.media.teamA.logo;
-  delete safeGame.media.teamB.logo;
-  safeGame.media.players.forEach((player) => {
-    delete player.photo;
-    delete player.photos;
-  });
+  const safeGame = typeof game.toObject === 'function' ? game.toObject() : { ...game };
+  if (!safeGame.media || typeof safeGame.media !== 'object') return safeGame;
+
+  safeGame.media = { ...safeGame.media };
+  if (safeGame.media.teamA) {
+    safeGame.media.teamA = { ...safeGame.media.teamA };
+    delete safeGame.media.teamA.logo;
+  }
+  if (safeGame.media.teamB) {
+    safeGame.media.teamB = { ...safeGame.media.teamB };
+    delete safeGame.media.teamB.logo;
+  }
+  if (Array.isArray(safeGame.media.players)) {
+    safeGame.media.players = safeGame.media.players.map((player) => ({ ...player }));
+    safeGame.media.players.forEach((player) => {
+      delete player.photo;
+      delete player.photos;
+    });
+  }
   return safeGame;
 }
 

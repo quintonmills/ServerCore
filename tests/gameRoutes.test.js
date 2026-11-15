@@ -605,6 +605,39 @@ test('persists games without an eligible flyer scorer', async () => {
   });
 });
 
+test('returns success for a saved no-flyer game with no media object in the database response', async () => {
+  const app = createTestApp({
+    GameModel: {
+      async findOneAndUpdate(_filter, update) {
+        const savedGame = applyGameUpdate(undefined, update);
+        delete savedGame.media;
+        savedGame._id = 'saved-without-media';
+        return savedGame;
+      },
+    },
+    flyerGenerator: async () => {
+      throw new Error('No flyer should be generated for a tier-ineligible player');
+    },
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/games/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...payload,
+        players: [{ ...payload.players[0], pts: 0 }],
+      }),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.game._id, 'saved-without-media');
+    assert.equal(body.game.status, 'COMPLETED');
+    assert.deepEqual(body.graphics, []);
+  });
+});
+
 test('returns success for a saved game with no eligible flyer despite ancillary update failures', async () => {
   const noFlyerPayload = {
     ...payload,
