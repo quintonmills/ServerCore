@@ -8,6 +8,7 @@ import {
   validateRasterImageDataUrl,
 } from '../utils/rasterImage.js';
 import { evaluateGraphicTier } from '../utils/evaluateGraphicTier.js';
+import logger from '../logger.js';
 
 const apiUrl = 'https://api.openai.com/v1/images/edits';
 const defaultImageModel = 'gpt-image-2.5-sunburst';
@@ -107,8 +108,10 @@ export async function generateFlyerImage({
   templateImage,
   teamLogoImage,
   imageGeneration = {},
+  requestId,
   apiKey = process.env.OPENAI_API_KEY,
   fetchImplementation = fetch,
+  log = logger,
 }) {
   if (!apiKey) {
     throw new ImageGenerationError('Image generation is not configured on the server.');
@@ -158,21 +161,26 @@ export async function generateFlyerImage({
     try {
       errorBody = await response.json();
     } catch {
-      console.error('[openai] Could not parse the image-generation error response', {
-        status: response.status,
-      });
+      log.error(
+        { requestId, statusCode: response.status },
+        'Could not parse the image-generation error response',
+      );
     }
     const providerError = errorBody?.error;
     const providerMessage =
       typeof providerError?.message === 'string'
         ? providerError.message.replace(/[\r\n]+/g, ' ').slice(0, 500)
         : undefined;
-    console.error('[openai] Image generation request failed', {
-      status: response.status,
-      ...(typeof providerError?.type === 'string' ? { type: providerError.type } : {}),
-      ...(typeof providerError?.code === 'string' ? { code: providerError.code } : {}),
-      ...(providerMessage ? { message: providerMessage } : {}),
-    });
+    log.error(
+      {
+        requestId,
+        statusCode: response.status,
+        ...(typeof providerError?.type === 'string' ? { type: providerError.type } : {}),
+        ...(typeof providerError?.code === 'string' ? { code: providerError.code } : {}),
+        ...(providerMessage ? { providerMessage } : {}),
+      },
+      'Image generation request failed',
+    );
     throw new ImageGenerationError(
       `The image-generation service returned HTTP ${response.status}.`,
     );

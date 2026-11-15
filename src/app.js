@@ -7,6 +7,7 @@ import Game from './models/Game.js';
 import Player from './models/Player.js';
 import Team from './models/Team.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { requestLogger } from './middleware/requestLogger.js';
 import { generateFlyer } from './services/generateFlyer.js';
 import { createGameRouter } from './routes/gameRoutes.js';
 
@@ -23,13 +24,14 @@ export function createApp({
   mkdirSync(outputDirectory, { recursive: true });
 
   const app = express();
+  app.use(requestLogger);
   const allowedOrigins =
     corsOrigin === '*'
       ? '*'
       : (Array.isArray(corsOrigin) ? corsOrigin : corsOrigin.split(','))
           .map((origin) => origin.trim())
           .filter(Boolean);
-  app.use(cors({ origin: allowedOrigins }));
+  app.use(cors({ origin: allowedOrigins, exposedHeaders: ['x-request-id'] }));
   app.use(express.json({ limit: '35mb' }));
   app.use('/output', express.static(path.resolve(outputDirectory), { fallthrough: false }));
   app.get('/api/games/flyers/:filename/download', (request, response, next) => {

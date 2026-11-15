@@ -606,6 +606,27 @@ test('health endpoint is available without a database', async () => {
   });
 });
 
+test('echoes valid request IDs and generates safe IDs for invalid or missing values', async () => {
+  const app = createTestApp();
+  await withServer(app, async (baseUrl) => {
+    const suppliedId = 'trace.client-123';
+    const suppliedResponse = await fetch(`${baseUrl}/api/health`, {
+      headers: { 'x-request-id': suppliedId },
+    });
+    assert.equal(suppliedResponse.headers.get('x-request-id'), suppliedId);
+    assert.equal(
+      suppliedResponse.headers.get('access-control-expose-headers'),
+      'x-request-id',
+    );
+
+    for (const headers of [{}, { 'x-request-id': 'x'.repeat(129) }]) {
+      const response = await fetch(`${baseUrl}/api/health`, { headers });
+      const requestId = response.headers.get('x-request-id');
+      assert.match(requestId, /^[0-9a-f-]{36}$/);
+    }
+  });
+});
+
 test('CORS allows each configured frontend origin and omits headers for other origins', async () => {
   const app = createTestApp({
     corsOrigin: 'https://scorekings.example.com, https://admin.example.com',

@@ -3,6 +3,7 @@ import { normalizePlayerStats } from '../utils/playerStats.js';
 import { selectPlayersForCards } from '../services/selectPlayersForCards.js';
 import { validateRasterImageDataUrl } from '../utils/rasterImage.js';
 import { validateGamePayload } from '../utils/validateGamePayload.js';
+import logger, { serializeError } from '../logger.js';
 
 function isDuplicateKeyError(error) {
   return error?.code === 11000;
@@ -207,6 +208,7 @@ export function createGameController({
           playerImages: getPlayerImages(input),
           teamLogoImage: team.logo,
           imageGeneration,
+          requestId: request.id,
         });
         return {
           playerId: player.id,
@@ -249,7 +251,10 @@ export function createGameController({
       );
       cleanupResults.forEach((result) => {
         if (result.status === 'rejected') {
-          console.error('[games/finalize] Failed to remove a generated graphic after failure:', result.reason);
+          logger.error(
+            { err: serializeError(result.reason), requestId: request.id },
+            'Failed to remove a generated graphic after request failure',
+          );
         }
       });
       next(error);

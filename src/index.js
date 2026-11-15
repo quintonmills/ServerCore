@@ -4,12 +4,38 @@ import mongoose from 'mongoose';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
 import Game from './models/Game.js';
+import logger, { serializeError } from './logger.js';
 
 const DEFAULT_MONGO_URI = 'mongodb://127.0.0.1:27017/scorekings';
 
-function safeConnectionError(error) {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.replace(/(mongodb(?:\+srv)?:\/\/)[^@/\s]+@/gi, '$1[redacted]@');
+const instrumentedConnections = new WeakSet();
+
+function logConnectionEvents(connection) {
+  if (instrumentedConnections.has(connection)) return;
+  instrumentedConnections.add(connection);
+
+  const logState = (event, level = 'info') => {
+    logger[level](
+      { event: `mongoose.connection.${event}`, readyState: connection.readyState },
+      `MongoDB connection ${event}`,
+    );
+  };
+
+  for (const event of ['connecting', 'connected', 'open', 'disconnecting', 'disconnected', 'reconnected', 'close']) {
+    connection.on(event, () => {
+      logState(event, event === 'disconnected' || event === 'close' ? 'warn' : 'info');
+    });
+  }
+  connection.on('error', (error) => {
+    logger.error(
+      {
+        event: 'mongoose.connection.error',
+        readyState: connection.readyState,
+        err: serializeError(error),
+      },
+      'MongoDB connection error',
+    );
+  });
 }
 
 export async function startServer() {
@@ -17,30 +43,22 @@ export async function startServer() {
   const mongoUri = MONGO_URI || MONGODB_URI || DEFAULT_MONGO_URI;
   const port = Number(PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    console.error('[startup] PORT must be an integer between 1 and 65535');
+    logger.error({ port: PORT }, 'PORT must be an integer between 1 and 65535');
     throw new Error('PORT must be an integer between 1 and 65535');
   }
 
-  mongoose.connection.on('connected', () => {
-    console.log('[startup] MongoDB connection established');
-  });
-  mongoose.connection.on('disconnected', () => {
-    console.error('[startup] MongoDB connection lost');
-  });
-  mongoose.connection.on('error', (error) => {
-    console.error(`[startup] MongoDB connection error: ${safeConnectionError(error)}`);
-  });
+  logConnectionEvents(mongoose.connection);
 
   try {
     await mongoose.connect(mongoUri);
   } catch (error) {
-    console.error(`[startup] MongoDB connection failed: ${safeConnectionError(error)}`);
+    logger.error({ err: serializeError(error) }, 'MongoDB connection failed');
     throw error;
   }
 
   try {
     await Game.collection.dropIndex('gameId_1');
-    console.log('[startup] Removed legacy unique gameId index');
+    logger.info({ index: 'gameId_1' }, 'Removed legacy unique MongoDB index');
   } catch (error) {
     const indexOrCollectionMissing =
       error.code === 27 ||
@@ -48,21 +66,39 @@ export async function startServer() {
       error.codeName === 'IndexNotFound' ||
       error.codeName === 'NamespaceNotFound';
     if (!indexOrCollectionMissing) {
-      console.error(`[startup] Failed to remove legacy unique gameId index: ${safeConnectionError(error)}`);
+      logger.error(
+        { index: 'gameId_1', err: serializeError(error) },
+        'Failed to remove legacy unique MongoDB index',
+      );
       throw error;
     }
   }
 
-  console.log(`[startup] MongoDB connection readyState: ${mongoose.connection.readyState}`);
+  logger.info(
+    { event: 'mongoose.connection.ready', readyState: mongoose.connection.readyState },
+    'MongoDB connection ready',
+  );
 
-  const server = createApp().listen(port, () => {
-    console.log(`[startup] ScoreKings API listening on port ${port}`);
+  const server = createApp().listen(port);
+  await new Promise((resolve, reject) => {
+    const onError = (error) => {
+      server.off('listening', onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.off('error', onError);
+      logger.info({ port }, 'ScoreKings API listening');
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
   });
   return server;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  startServer().catch(() => {
+  startServer().catch((error) => {
+    logger.fatal({ err: serializeError(error) }, 'Server startup failed');
     process.exitCode = 1;
   });
 }

@@ -24,6 +24,7 @@ export async function generateFlyer(
     playerImages,
     teamLogoImage,
     imageGeneration,
+    requestId,
     imageGenerator = generateFlyerImage,
   } = {},
 ) {
@@ -41,6 +42,7 @@ export async function generateFlyer(
     playerImage: references.length === 1 ? references[0] : undefined,
     teamLogoImage,
     imageGeneration,
+    requestId,
   });
   const filename = `${safeFilenamePart(gameData.gameId)}-${safeFilenamePart(
     playerData.id,

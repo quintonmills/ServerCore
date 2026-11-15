@@ -22,6 +22,7 @@ Set the values in `.env`:
 | Variable | Description | Default |
 | --- | --- | --- |
 | `PORT` | HTTP port | `5000` |
+| `LOG_LEVEL` | Structured log threshold (`fatal`, `error`, `warn`, `info`, `debug`, `trace`, or `silent`) | `info` |
 | `MONGO_URI` | MongoDB connection string | `mongodb://127.0.0.1:27017/scorekings` |
 | `MONGODB_URI` | Legacy alias for `MONGO_URI` | Unset |
 | `CORS_ORIGIN` | Allowed browser origin | `*` if unset |
@@ -43,6 +44,8 @@ npm start
 ```
 
 The server waits for a successful MongoDB connection before it starts accepting HTTP requests. A connection or configuration error is logged and exits with a non-zero status.
+
+Application and HTTP request logs are newline-delimited JSON. Each request receives an `x-request-id` response header; a valid supplied ID is preserved, otherwise the server generates one. The ID is included in request and error logs and is exposed to browser clients through CORS.
 
 ## Scripts
 

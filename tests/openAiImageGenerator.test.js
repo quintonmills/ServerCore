@@ -284,44 +284,44 @@ test('logs concise provider details for rejected image-generation requests', asy
   const playerImage = createRasterImageDataUrl('jpeg');
   const teamLogoImage = createRasterImageDataUrl('png');
   const loggedErrors = [];
-  const originalConsoleError = console.error;
-  console.error = (...args) => loggedErrors.push(args);
 
-  try {
-    await assert.rejects(
-      generateFlyerImage({
-        player: { name: 'Marcus', jersey: '3', team: 'Team A', pts: 14, reb: 5, ast: 3 },
-        game: { teamA: { name: 'Red Team' }, teamB: { name: 'Blue Team' } },
-        playerImage,
-        teamLogoImage,
-        apiKey: 'test-key',
-        fetchImplementation: async () => ({
-          ok: false,
-          status: 400,
-          async json() {
-            return {
-              error: {
-                type: 'invalid_request_error',
-                code: 'unsupported_value',
-                message: 'Invalid image dimensions',
-              },
-            };
-          },
-        }),
+  await assert.rejects(
+    generateFlyerImage({
+      player: { name: 'Marcus', jersey: '3', team: 'Team A', pts: 14, reb: 5, ast: 3 },
+      game: { teamA: { name: 'Red Team' }, teamB: { name: 'Blue Team' } },
+      playerImage,
+      teamLogoImage,
+      apiKey: 'test-key',
+      log: {
+        error(fields, message) {
+          loggedErrors.push([message, fields]);
+        },
+      },
+      fetchImplementation: async () => ({
+        ok: false,
+        status: 400,
+        async json() {
+          return {
+            error: {
+              type: 'invalid_request_error',
+              code: 'unsupported_value',
+              message: 'Invalid image dimensions',
+            },
+          };
+        },
       }),
-      /image-generation service returned HTTP 400/,
-    );
-  } finally {
-    console.error = originalConsoleError;
-  }
+    }),
+    /image-generation service returned HTTP 400/,
+  );
 
   assert.deepEqual(loggedErrors, [[
-    '[openai] Image generation request failed',
+    'Image generation request failed',
     {
-      status: 400,
+      requestId: undefined,
+      statusCode: 400,
       type: 'invalid_request_error',
       code: 'unsupported_value',
-      message: 'Invalid image dimensions',
+      providerMessage: 'Invalid image dimensions',
     },
   ]]);
 });
