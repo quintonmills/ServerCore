@@ -14,17 +14,14 @@ const teamSchema = new mongoose.Schema(
     teamId: { type: String, maxlength: 100 },
     name: { type: String, required: true, maxlength: 200 },
     score: { type: Number, required: true, min: 0 },
-    logo: { type: String, maxlength: 7 * 1024 * 1024 },
-    logoUrl: { type: String, maxlength: 2048 },
   },
   { _id: false },
 );
 
-const gameTeamSchema = new mongoose.Schema(
+const mediaTeamSchema = new mongoose.Schema(
   {
-    teamId: { type: String, maxlength: 100 },
-    name: { type: String, required: true, maxlength: 200 },
-    score: { type: Number, required: true, min: 0 },
+    logo: { type: String, maxlength: 7 * 1024 * 1024 },
+    logoUrl: { type: String, maxlength: 2048 },
   },
   { _id: false },
 );
@@ -86,14 +83,6 @@ const generatedMediaSchema = new mongoose.Schema(
   { _id: false },
 );
 
-const metadataSchema = new mongoose.Schema(
-  {
-    testMode: { type: Boolean, default: false },
-    verifiedForLicensing: { type: Boolean, default: false },
-  },
-  { _id: false },
-);
-
 const playerSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, maxlength: 100 },
@@ -110,6 +99,13 @@ const playerSchema = new mongoose.Schema(
     stl: { type: Number, required: true, min: 0 },
     blk: { type: Number, required: true, min: 0 },
     to: { type: Number, required: true, min: 0 },
+  },
+  { _id: false },
+);
+
+const playerMediaSchema = new mongoose.Schema(
+  {
+    playerId: { type: String, required: true, maxlength: 100 },
     photo: { type: String, maxlength: 7 * 1024 * 1024 },
     photos: {
       type: [{ type: String, maxlength: 7 * 1024 * 1024 }],
@@ -130,22 +126,36 @@ const gameSchema = new mongoose.Schema(
       enum: ['IN_PROGRESS', 'COMPLETED'],
       default: 'COMPLETED',
     },
-    startedAt: { type: Date },
-    completedAt: { type: Date, default: Date.now },
-    teamA: { type: teamSchema, required: true },
-    teamB: { type: teamSchema, required: true },
-    teams: {
-      home: { type: gameTeamSchema },
-      away: { type: gameTeamSchema },
+    timestamps: {
+      startedAt: { type: Date },
+      completedAt: { type: Date },
+      createdAt: { type: Date, required: true },
+      updatedAt: { type: Date, required: true },
     },
-    players: { type: [playerSchema], required: true },
-    boxScore: { type: [boxScoreSchema], default: [] },
-    events: { type: [playByPlayEventSchema], default: [] },
-    generatedMedia: { type: [generatedMediaSchema], default: [] },
-    metadata: { type: metadataSchema, default: () => ({}) },
-    imageGeneration: { type: imageGenerationSchema },
+    gameData: {
+      teamA: { type: teamSchema, required: true },
+      teamB: { type: teamSchema, required: true },
+      teams: {
+        home: { type: teamSchema },
+        away: { type: teamSchema },
+      },
+      players: { type: [playerSchema], required: true },
+      boxScore: { type: [boxScoreSchema], default: [] },
+      events: { type: [playByPlayEventSchema], default: [] },
+    },
+    media: {
+      teamA: { type: mediaTeamSchema, default: () => ({}) },
+      teamB: { type: mediaTeamSchema, default: () => ({}) },
+      players: { type: [playerMediaSchema], default: [] },
+      generatedMedia: { type: [generatedMediaSchema], default: [] },
+      imageGeneration: { type: imageGenerationSchema },
+    },
+    metadata: {
+      testMode: { type: Boolean, default: false },
+      verifiedForLicensing: { type: Boolean, default: false },
+    },
   },
-  { timestamps: true, versionKey: false },
+  { timestamps: false, versionKey: false },
 );
 
 gameSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });

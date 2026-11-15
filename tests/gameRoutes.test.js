@@ -66,6 +66,31 @@ function createTestApp(options = {}) {
   });
 }
 
+function applyGameUpdate(existing, update) {
+  const game = structuredClone(existing || {});
+  const applyPath = (path, value) => {
+    const segments = path.split('.');
+    const field = segments.pop();
+    const parent = segments.reduce((current, segment) => {
+      current[segment] ??= {};
+      return current[segment];
+    }, game);
+    parent[field] = structuredClone(value);
+  };
+  for (const [path, value] of Object.entries(update.$set || {})) {
+    applyPath(path, value);
+  }
+  if (!existing) {
+    for (const [path, value] of Object.entries(update.$setOnInsert || {})) {
+      applyPath(path, value);
+    }
+  }
+  if (update.$push?.['media.generatedMedia']) {
+    game.media.generatedMedia.push(...update.$push['media.generatedMedia'].$each);
+  }
+  return game;
+}
+
 async function withServer(app, run) {
   const server = createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -79,7 +104,7 @@ async function withServer(app, run) {
   }
 }
 
-test('finalize persists the supplied game ID and returns generated graphics', async () => {
+test('finalize stores a readable game ID and returns generated graphics', async () => {
   let savedPayload;
   let savedGame;
   const renderedPlayers = [];
@@ -119,7 +144,7 @@ test('finalize persists the supplied game ID and returns generated graphics', as
   const GameModel = {
     async findOneAndUpdate(filter, update, options) {
       if (update.$push) {
-        savedGame.generatedMedia.push(...update.$push.generatedMedia.$each);
+        savedGame = applyGameUpdate(savedGame, update);
         return savedGame;
       }
       savedPayload = update.$set;
@@ -130,12 +155,8 @@ test('finalize persists the supplied game ID and returns generated graphics', as
         runValidators: true,
         setDefaultsOnInsert: true,
       });
-      savedGame = {
-        ...savedPayload,
-        _id: 'mongo-game-id',
-        generatedMedia: [],
-        createdAt: new Date('2026-01-01T00:00:00.000Z'),
-      };
+      savedGame = applyGameUpdate(undefined, update);
+      savedGame._id = 'mongo-game-id';
       return savedGame;
     },
   };
@@ -176,11 +197,11 @@ test('finalize persists the supplied game ID and returns generated graphics', as
       const body = await response.json();
 
       assert.equal(response.status, 200);
-      assert.equal(body.game.gameId, 'game-101');
+      assert.match(body.game.gameId, /^marietta-rec-league-/);
       assert.equal(body.game._id, 'mongo-game-id');
-      assert.equal(body.game.events.length, 2);
-      assert.equal(body.game.boxScore.length, 3);
-      assert.equal(body.game.generatedMedia[0].publicUrl, body.graphics[0].publicUrl);
+      assert.equal(body.game.gameData.events.length, 2);
+      assert.equal(body.game.gameData.boxScore.length, 3);
+      assert.equal(body.game.media.generatedMedia[0].publicUrl, body.graphics[0].publicUrl);
       assert.equal(body.graphics.length, 3);
       assert.deepEqual(renderedPlayers, ['p2', 'p3', 'p1']);
       assert.equal(body.graphics[0].playerId, 'p2');
@@ -193,13 +214,13 @@ test('finalize persists the supplied game ID and returns generated graphics', as
         body.graphics[0].downloadUrl,
         `https://scorekings-api.example.com/api/games/flyers/${graphicFilename}/download`,
       );
-      assert.equal(savedPayload.gameId, 'game-101');
+      assert.match(savedGame.gameId, /^marietta-rec-league-/);
       assert.equal(savedPayload.idempotencyKey, 'finalize-request-101');
       assert.equal(savedPayload.status, 'COMPLETED');
-      assert.equal(savedPayload.boxScore[0].PTS, 14);
-      assert.equal(savedPayload.events.length, 2);
-      assert.equal(savedPayload.events[0].action, 'PTS_2');
-      assert.equal(savedPayload.events[0].resultingScore.teamA, 2);
+      assert.equal(savedPayload.gameData.boxScore[0].PTS, 14);
+      assert.equal(savedPayload.gameData.events.length, 2);
+      assert.equal(savedPayload.gameData.events[0].action, 'PTS_2');
+      assert.equal(savedPayload.gameData.events[0].resultingScore.teamA, 2);
       assert.equal(statUpdates.length, 3);
       assert.deepEqual(statUpdates[0].filter, { playerId: 'p1' });
       assert.equal(statUpdates[0].update.$inc['careerStats.pts'], 14);
@@ -207,15 +228,15 @@ test('finalize persists the supplied game ID and returns generated graphics', as
       assert.equal(savedPayload.metadata.verifiedForLicensing, true);
       assert.equal(statUpdates[0].update.$set.teamId, 'red-team');
       assert.equal(teamUpdates.length, 2);
-      assert.equal(savedPayload.teams.home.teamId, 'red-team');
-      assert.deepEqual(savedPayload.players[0].photos, multiPlayerPayload.players[0].photos);
-      assert.equal(savedPayload.teamA.logo, multiPlayerPayload.teamA.logo);
-      assert.deepEqual(savedPayload.imageGeneration, {
+      assert.equal(savedPayload.gameData.teams.home.teamId, 'red-team');
+      assert.deepEqual(savedPayload['media.players'][0].photos, multiPlayerPayload.players[0].photos);
+      assert.equal(savedPayload['media.teamA'].logo, multiPlayerPayload.teamA.logo);
+      assert.deepEqual(savedPayload['media.imageGeneration'], {
         ...multiPlayerPayload.imageGeneration,
         size: '1024x1536',
       });
-      assert.equal(body.game.players[0].photos, undefined);
-      assert.equal(body.game.teamA.logo, undefined);
+      assert.equal(body.game.gameData.players[0].photos, undefined);
+      assert.equal(body.game.media.teamA.logo, undefined);
       assert.equal(renderedPlayers.length, 3);
 
       const downloadUrl = new URL(body.graphics[0].downloadUrl);
@@ -252,14 +273,11 @@ test('finalize evaluates and generates a five-player graphic pack concurrently',
     GameModel: {
       async findOneAndUpdate(_filter, update) {
         if (update.$push) {
-          savedGame.generatedMedia.push(...update.$push.generatedMedia.$each);
+          savedGame = applyGameUpdate(savedGame, update);
           return savedGame;
         }
-        savedGame = {
-          ...update.$set,
-          _id: 'five-player-game',
-          generatedMedia: [],
-        };
+        savedGame = applyGameUpdate(undefined, update);
+        savedGame._id = 'five-player-game';
         return savedGame;
       },
     },
@@ -291,8 +309,8 @@ test('finalize evaluates and generates a five-player graphic pack concurrently',
 
     assert.equal(response.status, 200);
     assert.deepEqual(body.graphics.map((graphic) => graphic.playerId), ['p5', 'p4', 'p3', 'p2', 'p1']);
-    assert.equal(body.game.boxScore.length, 5);
-    assert.equal(body.game.generatedMedia.length, 5);
+    assert.equal(body.game.gameData.boxScore.length, 5);
+    assert.equal(body.game.media.generatedMedia.length, 5);
     assert.equal(statUpdates.length, 5);
     assert.equal(maxActiveGenerations, 5);
     assert.deepEqual(body.graphics.map((graphic) => graphic.playerName), [
@@ -346,7 +364,9 @@ test('persists game history when optional flyer photos or team logos are not sup
     GameModel: {
       async findOneAndUpdate(_filter, update) {
         savedPayload = update.$set;
-        return { ...savedPayload, _id: 'saved-without-flyer', generatedMedia: [] };
+        const savedGame = applyGameUpdate(undefined, update);
+        savedGame._id = 'saved-without-flyer';
+        return savedGame;
       },
     },
     flyerGenerator: async () => {
@@ -365,14 +385,14 @@ test('persists game history when optional flyer photos or team logos are not sup
     assert.equal(response.status, 200);
     assert.equal(body.game._id, 'saved-without-flyer');
     assert.deepEqual(body.graphics, []);
-    assert.equal(savedPayload.players[0].photos, undefined);
+    assert.equal(savedPayload.gameData.players[0].photos, undefined);
     assert.equal(savedPayload.status, 'COMPLETED');
     assert.equal(savedPayload.idempotencyKey, 'game-101');
-    assert.equal(savedPayload.startedAt, incompletePayload.startedAt);
-    assert.equal(savedPayload.completedAt, incompletePayload.completedAt);
-    assert.equal(savedPayload.boxScore[0].playerId, 'p1');
-    assert.equal(savedPayload.boxScore[0].PTS, 14);
-    assert.equal(savedPayload.events.length, 1);
+    assert.equal(savedPayload['timestamps.startedAt'], incompletePayload.startedAt);
+    assert.equal(savedPayload['timestamps.completedAt'], incompletePayload.completedAt);
+    assert.equal(savedPayload['gameData'].boxScore[0].playerId, 'p1');
+    assert.equal(savedPayload['gameData'].boxScore[0].PTS, 14);
+    assert.equal(savedPayload['gameData'].events.length, 1);
     assert.deepEqual(savedPayload.metadata, { testMode: false, verifiedForLicensing: true });
   });
 });
@@ -389,12 +409,8 @@ test('uses the game ID as a stable fallback key and keeps distinct games in sepa
           setDefaultsOnInsert: true,
         });
         const key = filter.idempotencyKey;
-        const savedGame = {
-          ...(savedGames.get(key) || {}),
-          ...update.$set,
-          _id: savedGames.get(key)?._id || `mongo-${key}`,
-          generatedMedia: [],
-        };
+        const savedGame = applyGameUpdate(savedGames.get(key), update);
+        savedGame._id = savedGames.get(key)?._id || `mongo-${key}`;
         savedGames.set(key, savedGame);
         return savedGame;
       },
@@ -420,8 +436,8 @@ test('uses the game ID as a stable fallback key and keeps distinct games in sepa
     }
 
     assert.equal(savedGames.size, 2);
-    assert.equal(savedGames.get('game-distinct-1').gameId, 'game-distinct-1');
-    assert.equal(savedGames.get('game-distinct-2').gameId, 'game-distinct-2');
+    assert.match(savedGames.get('game-distinct-1').gameId, /^marietta-rec-league-/);
+    assert.match(savedGames.get('game-distinct-2').gameId, /^marietta-rec-league-/);
   });
 });
 
@@ -531,7 +547,9 @@ test('persists games without an eligible flyer scorer', async () => {
     GameModel: {
       async findOneAndUpdate(_filter, update) {
         saveCalls += 1;
-        return { ...update.$set, _id: 'saved-without-scorer', generatedMedia: [] };
+        const savedGame = applyGameUpdate(undefined, update);
+        savedGame._id = 'saved-without-scorer';
+        return savedGame;
       },
     },
     flyerGenerator: async () => {
@@ -549,7 +567,7 @@ test('persists games without an eligible flyer scorer', async () => {
 
     assert.equal(response.status, 200);
     assert.deepEqual(body.graphics, []);
-    assert.equal(body.game.gameId, 'game-101');
+    assert.match(body.game.gameId, /^marietta-rec-league-/);
     assert.equal(saveCalls, 1);
   });
 });
@@ -566,7 +584,7 @@ test('rendering failure returns an error and does not report a generated graphic
     GameModel: {
       async findOneAndUpdate(_filter, update) {
         savedPayload = update.$set;
-        return { ...savedPayload, generatedMedia: [] };
+        return applyGameUpdate(undefined, update);
       },
     },
     flyerGenerator: async () => {
@@ -586,8 +604,7 @@ test('rendering failure returns an error and does not report a generated graphic
     assert.equal(response.status, 500);
     assert.equal(body.error.code, 'INTERNAL_SERVER_ERROR');
     assert.equal(renderCalls, 1);
-    assert.equal(savedPayload.gameId, impressivePayload.gameId);
-    assert.equal(savedPayload.boxScore[0].PTS, 18);
+    assert.equal(savedPayload.gameData.boxScore[0].PTS, 18);
   });
 });
 

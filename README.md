@@ -143,7 +143,7 @@ Application and HTTP request logs are newline-delimited JSON. Each request recei
 }
 ```
 
-The `players` array can include the full five-player lineup, with each player carrying their own stats and optional one to three `photos`. Supply PNG, JPEG, or WebP image data URLs, each no larger than 5 MB. The API saves stats for every player, but generates graphics only for the up to five highest-ranked impressive stat lines that also have one to three photos and a logo for their team. Rec-league thresholds are adjusted for 40-minute running-clock games: Tier 2 starts at 12+ points, 6+ assists, or a double-double in points/rebounds/assists; Tier 3 starts at 18+ points or `topPerformer: true`. Players are ranked by points, rebounds, then assists. Generation requests run in parallel. Missing graphic assets do not prevent the game and its stats from being persisted. The existing singular `photo` field remains accepted for older clients. `topPerformer` is an optional boolean on a player; setting it to `true` selects the top visual tier and qualifies the player for a graphic. `boxScore` is optional; when omitted, player stats are used to build it. `events` is an optional array of play-by-play objects; the typed fields are `period`, `playerId`, `action`, `timestamp`, and `resultingScore`. Existing event properties are retained for older clients. Box-score entries can provide uppercase or lowercase stat keys. `metadata` optionally stores `testMode` and `verifiedForLicensing` booleans. `teamId` values identify corresponding Team and Player records. `imageGeneration` is optional: `prompt` adds compatible art direction, `size` accepts `1024x1024`, `1024x1536`, `1536x1024`, or `auto`, and `quality` accepts `low`, `medium`, `high`, or `auto`. Defaults are `1024x1536` and `high`. Uploaded player photos, team logos, and image-generation settings are saved with the game in MongoDB; the API limits the complete stored game payload to 14 MB to stay safely below MongoDB's 16 MB document limit. Image data is omitted from the response to keep it small.
+The `players` array can include the full five-player lineup, with each player carrying their own stats and optional one to three `photos`. Supply PNG, JPEG, or WebP image data URLs, each no larger than 5 MB. The API saves stats for every player, but generates graphics only for the up to five highest-ranked impressive stat lines that also have one to three photos and a logo for their team. Rec-league thresholds are adjusted for 40-minute running-clock games: Tier 2 starts at 12+ points, 6+ assists, or a double-double in points/rebounds/assists; Tier 3 starts at 18+ points or `topPerformer: true`. Players are ranked by points, rebounds, then assists. Generation requests run in parallel. Missing graphic assets do not prevent the game and its stats from being persisted. The existing singular `photo` field remains accepted for older clients. `topPerformer` is an optional boolean on a player; setting it to `true` selects the top visual tier and qualifies the player for a graphic. `boxScore` is optional; when omitted, player stats are used to build it. `events` is an optional array of play-by-play objects; the typed fields are `period`, `playerId`, `action`, `timestamp`, and `resultingScore`. Existing event properties are retained for older clients. Box-score entries can provide uppercase or lowercase stat keys. `metadata` optionally stores `testMode` and `verifiedForLicensing` booleans. `teamId` values identify corresponding Team and Player records. `imageGeneration` is optional: `prompt` adds compatible art direction, `size` accepts `1024x1024`, `1024x1536`, `1536x1024`, or `auto`, and `quality` accepts `low`, `medium`, `high`, or `auto`. Defaults are `1024x1536` and `high`. Uploaded player photos, team logos, and image-generation settings are saved under `media`; game teams, players, box scores, and events are stored under `gameData`; lifecycle dates are stored under `timestamps`. The API limits the complete stored game payload to 14 MB to stay safely below MongoDB's 16 MB document limit. Image data is omitted from the response to keep it small. The saved `gameId` is a readable location-and-timestamp identifier; `idempotencyKey` remains the unique key used to safely retry finalization.
 
 The API returns `200 OK` with the upserted game and a `graphics` array containing zero to five generated flyers. Each graphic includes its player's ID and name, generated file path, public preview URL, and stable download URL:
 
@@ -151,53 +151,66 @@ The API returns `200 OK` with the upserted game and a `graphics` array containin
 {
   "game": {
     "_id": "671000000000000000000001",
-    "gameId": "game-101",
+    "gameId": "marietta-rec-league-20261021-110000000Z",
     "location": "Marietta Rec League",
-    "teamA": { "name": "Red Team", "score": 24 },
-    "teamB": { "name": "Blue Team", "score": 18 },
-    "players": [
-      {
-        "id": "p1",
-        "team": "Team A",
-        "jersey": "3",
-        "name": "Marcus",
-        "pts": 14,
-        "reb": 5,
-        "ast": 3,
-        "stl": 1,
-        "blk": 0,
-        "to": 2
-      }
-    ],
-    "teams": {
-      "home": { "teamId": "red-team", "name": "Red Team", "score": 24 },
-      "away": { "teamId": "blue-team", "name": "Blue Team", "score": 18 }
-    },
+    "idempotencyKey": "game-101",
     "status": "COMPLETED",
-    "boxScore": [
-      { "playerId": "p1", "PTS": 14, "REB": 5, "AST": 3 }
-    ],
-    "events": [
-      { "type": "shot_made", "period": 1, "playerId": "p1", "points": 2 }
-    ],
-    "generatedMedia": [
-      {
-        "type": "flyer",
-        "playerId": "p1",
-        "publicUrl": "https://scorekings-api.example.com/output/game-101-p1-<unique-id>.jpg",
-        "downloadUrl": "https://scorekings-api.example.com/api/games/flyers/game-101-p1-<unique-id>.jpg/download"
-      }
-    ],
-    "createdAt": "2026-10-21T12:00:00.000Z",
-    "updatedAt": "2026-10-21T12:00:00.000Z"
+    "timestamps": {
+      "startedAt": "2026-10-21T11:00:00.000Z",
+      "completedAt": "2026-10-21T12:00:00.000Z",
+      "createdAt": "2026-10-21T12:00:00.000Z",
+      "updatedAt": "2026-10-21T12:00:00.000Z"
+    },
+    "gameData": {
+      "teamA": { "name": "Red Team", "score": 24 },
+      "teamB": { "name": "Blue Team", "score": 18 },
+      "players": [
+        {
+          "id": "p1",
+          "team": "Team A",
+          "jersey": "3",
+          "name": "Marcus",
+          "pts": 14,
+          "reb": 5,
+          "ast": 3,
+          "stl": 1,
+          "blk": 0,
+          "to": 2
+        }
+      ],
+      "teams": {
+        "home": { "teamId": "red-team", "name": "Red Team", "score": 24 },
+        "away": { "teamId": "blue-team", "name": "Blue Team", "score": 18 }
+      },
+      "boxScore": [
+        { "playerId": "p1", "PTS": 14, "REB": 5, "AST": 3 }
+      ],
+      "events": [
+        { "type": "shot_made", "period": 1, "playerId": "p1", "points": 2 }
+      ]
+    },
+    "media": {
+      "teamA": {},
+      "teamB": {},
+      "players": [],
+      "generatedMedia": [
+        {
+          "type": "flyer",
+          "playerId": "p1",
+          "publicUrl": "https://scorekings-api.example.com/output/marietta-rec-league-20261021-110000000Z-p1-<unique-id>.jpg",
+          "downloadUrl": "https://scorekings-api.example.com/api/games/flyers/marietta-rec-league-20261021-110000000Z-p1-<unique-id>.jpg/download"
+        }
+      ],
+      "imageGeneration": { "size": "1024x1536", "quality": "high" }
+    }
   },
   "graphics": [
     {
       "playerId": "p1",
       "playerName": "Marcus",
-      "filePath": "/path/to/server-core/output/game-101-p1-<unique-id>.jpg",
-      "publicUrl": "https://scorekings-api.example.com/output/game-101-p1-<unique-id>.jpg",
-      "downloadUrl": "https://scorekings-api.example.com/api/games/flyers/game-101-p1-<unique-id>.jpg/download"
+      "filePath": "/path/to/server-core/output/marietta-rec-league-20261021-110000000Z-p1-<unique-id>.jpg",
+      "publicUrl": "https://scorekings-api.example.com/output/marietta-rec-league-20261021-110000000Z-p1-<unique-id>.jpg",
+      "downloadUrl": "https://scorekings-api.example.com/api/games/flyers/marietta-rec-league-20261021-110000000Z-p1-<unique-id>.jpg/download"
     }
   ]
 }
@@ -235,7 +248,7 @@ Single-game stats deterministically set the visual tier before the prompt is sen
 | Tier 2 — En Fuego | 12+ points, 6+ assists, or a double-double in points/rebounds/assists | Dark-mode overlay, neon-lime (`#CCFF00`) diagonal accents, motion-blur highlights, and a STAT BREAKOUT badge |
 | Tier 3 — King of the Court | 18+ points or `topPerformer: true` | Obsidian canvas (`#050505`), chrome/gold text, subtle crown motifs, and dynamic magazine-cover border breaks |
 
-Tier 3 takes precedence when a player qualifies for multiple tiers. Ranking remains points, then rebounds, then assists, descending; ties retain incoming player order. OpenAI generates the complete flyer image, which the backend saves directly without local image composition. Uploaded player photos and team logos are saved with the game in MongoDB; generated JPEGs are written to `output/` (ignored by git) and served at `/output/<filename>` for preview and `/api/games/flyers/<filename>/download` as an attachment. Flyer URLs are also appended to the game's `generatedMedia` array after image generation succeeds. Set `PUBLIC_BASE_URL` to the externally reachable HTTPS API origin.
+Tier 3 takes precedence when a player qualifies for multiple tiers. Ranking remains points, then rebounds, then assists, descending; ties retain incoming player order. OpenAI generates the complete flyer image, which the backend saves directly without local image composition. Uploaded player photos and team logos are saved with the game in MongoDB; generated JPEGs are written to `output/` (ignored by git) and served at `/output/<filename>` for preview and `/api/games/flyers/<filename>/download` as an attachment. Flyer URLs are appended to `media.generatedMedia` after image generation succeeds. Set `PUBLIC_BASE_URL` to the externally reachable HTTPS API origin.
 
 Because the full flyer typography and logo placement are generated by an image model, text, statistics, and logos may not render perfectly every time. Review generated flyers before sharing them when exact typography or score accuracy is essential.
 

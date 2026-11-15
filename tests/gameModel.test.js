@@ -8,13 +8,14 @@ test('game schema stores reference images and image-generation settings', () => 
   const game = new Game({
     gameId: 'game-101',
     location: 'Marietta Rec League',
-    teamA: {
-      name: 'Red Team',
-      score: 24,
-      logo: 'data:image/png;base64,aGVsbG8=',
+    timestamps: {
+      createdAt: '2026-10-26T12:00:00.000Z',
+      updatedAt: '2026-10-26T12:00:00.000Z',
     },
-    teamB: { name: 'Blue Team', score: 18 },
-    players: [
+    gameData: {
+      teamA: { name: 'Red Team', score: 24 },
+      teamB: { name: 'Blue Team', score: 18 },
+      players: [
       {
         id: 'p1',
         firstName: 'Marcus',
@@ -29,11 +30,6 @@ test('game schema stores reference images and image-generation settings', () => 
         stl: 1,
         blk: 0,
         to: 2,
-        photos: [
-          'data:image/jpeg;base64,aGVsbG8=',
-          'data:image/jpeg;base64,aGVsbG8=',
-          'data:image/jpeg;base64,aGVsbG8=',
-        ],
       },
       {
         id: 'p2',
@@ -47,22 +43,39 @@ test('game schema stores reference images and image-generation settings', () => 
         blk: 0,
         to: 0,
       },
-    ],
-    imageGeneration: {
-      prompt: 'Arena spotlight',
-      size: '1024x1536',
-      quality: 'high',
+      ],
+    },
+    media: {
+      teamA: { logo: 'data:image/png;base64,aGVsbG8=' },
+      players: [{
+        playerId: 'p1',
+        photos: [
+          'data:image/jpeg;base64,aGVsbG8=',
+          'data:image/jpeg;base64,aGVsbG8=',
+          'data:image/jpeg;base64,aGVsbG8=',
+        ],
+      }],
+      imageGeneration: {
+        prompt: 'Arena spotlight',
+        size: '1024x1536',
+        quality: 'high',
+      },
     },
   });
 
   assert.equal(game.validateSync(), undefined);
-  assert.equal(game.teamA.logo, 'data:image/png;base64,aGVsbG8=');
-  assert.equal(game.players[0].photos.length, 3);
-  assert.equal(game.players[0].firstName, 'Marcus');
-  assert.equal(game.players[0].lastName, 'Example');
-  assert.equal(game.players[0].teamId, 'red-team');
-  assert.equal(game.players[1].photos, undefined);
-  assert.equal(game.imageGeneration.prompt, 'Arena spotlight');
+  assert.equal(game.media.teamA.logo, 'data:image/png;base64,aGVsbG8=');
+  assert.equal(game.media.players[0].photos.length, 3);
+  assert.equal(game.gameData.players[0].firstName, 'Marcus');
+  assert.equal(game.gameData.players[0].lastName, 'Example');
+  assert.equal(game.gameData.players[0].teamId, 'red-team');
+  assert.equal(game.media.players.length, 1);
+  assert.equal(game.media.imageGeneration.prompt, 'Arena spotlight');
+  assert.equal(game.createdAt, undefined);
+  assert.equal(Game.schema.path('gameData.players').instance, 'Array');
+  assert.equal(Game.schema.path('gameData.boxScore').instance, 'Array');
+  assert.equal(Game.schema.path('timestamps.startedAt').instance, 'Date');
+  assert.equal(Game.schema.path('generatedMedia'), undefined);
 });
 
 test('game schema stores an optional idempotency key', () => {
@@ -70,9 +83,12 @@ test('game schema stores an optional idempotency key', () => {
     gameId: 'game-idempotency',
     idempotencyKey: 'finalize-request-1',
     location: 'ScoreKings Arena',
-    teamA: { name: 'Red Team', score: 2 },
-    teamB: { name: 'Blue Team', score: 0 },
-    players: [],
+    timestamps: { createdAt: new Date(), updatedAt: new Date() },
+    gameData: {
+      teamA: { name: 'Red Team', score: 2 },
+      teamB: { name: 'Blue Team', score: 0 },
+      players: [],
+    },
   });
 
   assert.equal(game.validateSync(), undefined);
@@ -89,75 +105,86 @@ test('game schema stores teams, box scores, play-by-play events, and generated m
   const game = new Game({
     gameId: 'game-102',
     location: 'ScoreKings Arena',
-    teamA: { name: 'Red Team', score: 24 },
-    teamB: { name: 'Blue Team', score: 18 },
-    teams: {
-      home: { teamId: 'red', name: 'Red Team', score: 24 },
-      away: { teamId: 'blue', name: 'Blue Team', score: 18 },
+    timestamps: {
+      startedAt: '2026-10-26T12:00:00.000Z',
+      completedAt: '2026-10-26T13:00:00.000Z',
+      createdAt: '2026-10-26T12:00:00.000Z',
+      updatedAt: '2026-10-26T13:00:00.000Z',
     },
-    players: [],
-    boxScore: [{
-      playerId: 'player-1',
-      PTS: 14,
-      REB: 5,
-      AST: 3,
-      STL: 1,
-      BLK: 2,
-      TOV: 1,
-      MIN: 32,
-      FG: 6,
-      FGA: 12,
-      FG3: 2,
-      FG3A: 5,
-      FT: 2,
-      FTA: 3,
-      OREB: 1,
-      DREB: 4,
-      PF: 2,
-      PLUS_MINUS: -3,
-    }],
-    events: [{ type: 'shot_made', period: 1, points: 2 }],
-    generatedMedia: [{
-      type: 'flyer',
-      playerId: 'player-1',
-      publicUrl: 'https://cdn.example.com/flyer.jpg',
-      downloadUrl: 'https://api.example.com/flyer/download',
-    }],
-    startedAt: '2026-10-26T12:00:00.000Z',
-    completedAt: '2026-10-26T13:00:00.000Z',
+    gameData: {
+      teamA: { name: 'Red Team', score: 24 },
+      teamB: { name: 'Blue Team', score: 18 },
+      teams: {
+        home: { teamId: 'red', name: 'Red Team', score: 24 },
+        away: { teamId: 'blue', name: 'Blue Team', score: 18 },
+      },
+      players: [],
+      boxScore: [{
+        playerId: 'player-1',
+        PTS: 14,
+        REB: 5,
+        AST: 3,
+        STL: 1,
+        BLK: 2,
+        TOV: 1,
+        MIN: 32,
+        FG: 6,
+        FGA: 12,
+        FG3: 2,
+        FG3A: 5,
+        FT: 2,
+        FTA: 3,
+        OREB: 1,
+        DREB: 4,
+        PF: 2,
+        PLUS_MINUS: -3,
+      }],
+      events: [{ type: 'shot_made', period: 1, points: 2 }],
+    },
+    media: {
+      generatedMedia: [{
+        type: 'flyer',
+        playerId: 'player-1',
+        publicUrl: 'https://cdn.example.com/flyer.jpg',
+        downloadUrl: 'https://api.example.com/flyer/download',
+      }],
+    },
   });
 
   test('game schema accepts the variable one-to-three photo payload from the frontend', () => {
     const game = new Game({
       gameId: 'game-103',
       location: 'ScoreKings Arena',
-      teamA: { name: 'Red Team', score: 4 },
-      teamB: { name: 'Blue Team', score: 0 },
-      players: [{
-        id: 'player-1',
-        team: 'Team A',
-        jersey: '3',
-        name: 'Marcus',
-        pts: 4,
-        reb: 0,
-        ast: 0,
-        stl: 0,
-        blk: 0,
-        to: 0,
-        photos: ['one', 'two'],
-      }],
+      timestamps: { createdAt: new Date(), updatedAt: new Date() },
+      gameData: {
+        teamA: { name: 'Red Team', score: 4 },
+        teamB: { name: 'Blue Team', score: 0 },
+        players: [{
+          id: 'player-1',
+          team: 'Team A',
+          jersey: '3',
+          name: 'Marcus',
+          pts: 4,
+          reb: 0,
+          ast: 0,
+          stl: 0,
+          blk: 0,
+          to: 0,
+        }],
+      },
+      media: { players: [{ playerId: 'player-1', photos: ['one', 'two'] }] },
     });
 
     assert.equal(game.validateSync(), undefined);
   });
 
   assert.equal(game.validateSync(), undefined);
-  assert.equal(game.boxScore[0].PTS, 14);
-  assert.equal(game.boxScore[0].PLUS_MINUS, -3);
-  assert.equal(game.boxScore[0].FG3A, 5);
-  assert.equal(game.events[0].type, 'shot_made');
-  assert.equal(game.generatedMedia[0].downloadUrl, 'https://api.example.com/flyer/download');
-  assert.equal(game.teams.home.teamId, 'red');
+  assert.equal(game.gameData.boxScore[0].PTS, 14);
+  assert.equal(game.gameData.boxScore[0].PLUS_MINUS, -3);
+  assert.equal(game.gameData.boxScore[0].FG3A, 5);
+  assert.equal(game.gameData.events[0].type, 'shot_made');
+  assert.equal(game.media.generatedMedia[0].downloadUrl, 'https://api.example.com/flyer/download');
+  assert.equal(game.gameData.teams.home.teamId, 'red');
 });
 
 test('player and team schemas expose the identifiers and metric fields used by the API', () => {
@@ -181,18 +208,21 @@ test('game and player schemas store licensing metadata and typed play-by-play fi
   const game = new Game({
     gameId: 'game-104',
     location: 'ScoreKings Arena',
-    teamA: { name: 'Red Team', score: 2 },
-    teamB: { name: 'Blue Team', score: 0 },
-    players: [],
+    timestamps: { createdAt: new Date(), updatedAt: new Date() },
+    gameData: {
+      teamA: { name: 'Red Team', score: 2 },
+      teamB: { name: 'Blue Team', score: 0 },
+      players: [],
+      events: [{
+        period: 'Q1',
+        playerId: 'player-1',
+        action: 'PTS_2',
+        timestamp: '2026-10-26T12:00:00.000Z',
+        resultingScore: { teamA: 2, teamB: 0 },
+      }],
+    },
     status: 'COMPLETED',
     metadata: { testMode: false, verifiedForLicensing: true },
-    events: [{
-      period: 'Q1',
-      playerId: 'player-1',
-      action: 'PTS_2',
-      timestamp: '2026-10-26T12:00:00.000Z',
-      resultingScore: { teamA: 2, teamB: 0 },
-    }],
   });
   const player = new Player({
     playerId: 'player-2',
@@ -203,8 +233,8 @@ test('game and player schemas store licensing metadata and typed play-by-play fi
   assert.equal(game.validateSync(), undefined);
   assert.equal(game.status, 'COMPLETED');
   assert.equal(game.metadata.verifiedForLicensing, true);
-  assert.equal(game.events[0].action, 'PTS_2');
-  assert.equal(game.events[0].resultingScore.teamA, 2);
+  assert.equal(game.gameData.events[0].action, 'PTS_2');
+  assert.equal(game.gameData.events[0].resultingScore.teamA, 2);
   assert.equal(player.validateSync(), undefined);
-  assert.equal(game.generatedMedia.length, 0);
+  assert.equal(game.media.generatedMedia.length, 0);
 });

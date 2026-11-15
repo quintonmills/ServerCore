@@ -14,17 +14,34 @@ function omitStoredImages(game) {
     ? game.toObject()
     : {
         ...game,
-        teamA: { ...game.teamA },
-        teamB: { ...game.teamB },
-        players: game.players.map((player) => ({ ...player })),
+        media: {
+          ...game.media,
+          teamA: { ...game.media?.teamA },
+          teamB: { ...game.media?.teamB },
+          players: game.media?.players?.map((player) => ({ ...player })) || [],
+        },
       };
-  delete safeGame.teamA.logo;
-  delete safeGame.teamB.logo;
-  safeGame.players.forEach((player) => {
+  delete safeGame.media.teamA.logo;
+  delete safeGame.media.teamB.logo;
+  safeGame.media.players.forEach((player) => {
     delete player.photo;
     delete player.photos;
   });
   return safeGame;
+}
+
+function readableGameId(location, timestamp) {
+  const locationPart = location
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+    .toLowerCase() || 'game';
+  const timestampPart = new Date(timestamp)
+    .toISOString()
+    .replace(/[-:.]/g, '')
+    .replace('T', '-');
+  return `${locationPart}-${timestampPart}`;
 }
 
 function getPlayerImages(input) {
@@ -32,10 +49,34 @@ function getPlayerImages(input) {
 }
 
 async function saveFinalizedGame(GameModel, payload) {
+  const { gameId, timestamps, ...setPayload } = payload;
+  const { media, ...gameFields } = setPayload;
+  const $set = {
+    ...gameFields,
+    'timestamps.updatedAt': timestamps.updatedAt,
+    'media.teamA': media.teamA,
+    'media.teamB': media.teamB,
+    'media.players': media.players,
+    'media.imageGeneration': media.imageGeneration,
+  };
+  if (timestamps.startedAt !== undefined) {
+    $set['timestamps.startedAt'] = timestamps.startedAt;
+  }
+  if (timestamps.completedAt !== undefined) {
+    $set['timestamps.completedAt'] = timestamps.completedAt;
+  }
+  const update = {
+    $set,
+    $setOnInsert: {
+      gameId,
+      'timestamps.createdAt': timestamps.createdAt,
+      'media.generatedMedia': media.generatedMedia,
+    },
+  };
   try {
     return await GameModel.findOneAndUpdate(
       { idempotencyKey: payload.idempotencyKey },
-      { $set: payload },
+      update,
       { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
     );
   } catch (error) {
@@ -43,7 +84,7 @@ async function saveFinalizedGame(GameModel, payload) {
 
     const finalizedGame = await GameModel.findOneAndUpdate(
       { idempotencyKey: payload.idempotencyKey },
-      { $set: payload },
+      { $set },
       { new: true, runValidators: true },
     );
     if (!finalizedGame) throw error;
@@ -157,26 +198,54 @@ export function createGameController({
     const boxScore = getCanonicalBoxScore(request.body);
     const homeTeam = request.body.teams?.home || request.body.teamA;
     const awayTeam = request.body.teams?.away || request.body.teamB;
+    const now = new Date();
+    const gameTimestamp = request.body.startedAt || request.body.completedAt || now;
+    const status = (request.body.status || 'COMPLETED').toUpperCase();
+    const playerData = request.body.players.map(({ photo, photos, ...player }) => player);
     const gamePayload = {
-      ...request.body,
+      gameId: readableGameId(request.body.location, gameTimestamp),
       idempotencyKey: request.body.idempotencyKey ?? request.body.gameId,
-      status: (request.body.status || 'COMPLETED').toUpperCase(),
-      teams: {
-        home: {
-          teamId: homeTeam.teamId,
-          name: homeTeam.name,
-          score: homeTeam.score,
-        },
-        away: {
-          teamId: awayTeam.teamId,
-          name: awayTeam.name,
-          score: awayTeam.score,
-        },
+      location: request.body.location,
+      status,
+      timestamps: {
+        ...(request.body.startedAt ? { startedAt: request.body.startedAt } : {}),
+        ...(request.body.completedAt
+          ? { completedAt: request.body.completedAt }
+          : status === 'COMPLETED' ? { completedAt: now } : {}),
+        createdAt: now,
+        updatedAt: now,
       },
-      boxScore,
-      events: request.body.events || [],
+      gameData: {
+        teamA: { teamId: request.body.teamA.teamId, name: request.body.teamA.name, score: request.body.teamA.score },
+        teamB: { teamId: request.body.teamB.teamId, name: request.body.teamB.name, score: request.body.teamB.score },
+        teams: {
+          home: { teamId: homeTeam.teamId, name: homeTeam.name, score: homeTeam.score },
+          away: { teamId: awayTeam.teamId, name: awayTeam.name, score: awayTeam.score },
+        },
+        players: playerData,
+        boxScore,
+        events: request.body.events || [],
+      },
       metadata: request.body.metadata || {},
-      imageGeneration,
+      media: {
+        teamA: {
+          ...(request.body.teamA.logo ? { logo: request.body.teamA.logo } : {}),
+          ...(request.body.teamA.logoUrl ? { logoUrl: request.body.teamA.logoUrl } : {}),
+        },
+        teamB: {
+          ...(request.body.teamB.logo ? { logo: request.body.teamB.logo } : {}),
+          ...(request.body.teamB.logoUrl ? { logoUrl: request.body.teamB.logoUrl } : {}),
+        },
+        players: request.body.players
+          .filter((player) => player.photo || player.photos)
+          .map((player) => ({
+            playerId: player.id,
+            ...(player.photo ? { photo: player.photo } : {}),
+            ...(player.photos ? { photos: player.photos } : {}),
+          })),
+        generatedMedia: [],
+        imageGeneration,
+      },
     };
 
     const generated = [];
@@ -229,7 +298,7 @@ export function createGameController({
           { idempotencyKey: gamePayload.idempotencyKey },
           {
             $push: {
-              generatedMedia: {
+              'media.generatedMedia': {
                 $each: generated.map((graphic) => ({
                   type: 'flyer',
                   playerId: graphic.playerId,

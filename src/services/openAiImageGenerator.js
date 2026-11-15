@@ -58,7 +58,8 @@ async function loadTemplateReference(templateImage) {
 }
 
 function buildPrompt(player, game, extraPrompt, playerImageCount, tier) {
-  const teamName = player.team === 'Team A' ? game.teamA.name : game.teamB.name;
+  const teams = game.gameData || game;
+  const teamName = player.team === 'Team A' ? teams.teamA.name : teams.teamB.name;
   const isReboundDoubleDouble =
     player.reb >= 10 &&
     player.pts < 18 &&
