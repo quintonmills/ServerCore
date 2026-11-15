@@ -229,6 +229,7 @@ test('game and player schemas store licensing metadata and typed play-by-play fi
   assert.equal(game.metadata.verifiedForLicensing, true);
   assert.equal(game.gameData.events.get('pts_2').action, 'PTS_2');
   assert.equal(game.gameData.events.get('pts_2').resultingScore.teamA, 2);
+  assert.deepEqual(Object.keys(game.toObject({ flattenMaps: true }).gameData.events), ['pts_2']);
   assert.equal(player.validateSync(), undefined);
   assert.equal(game.media.generatedMedia.length, 0);
 });

@@ -37,7 +37,17 @@ The Docker image uses Node.js 22 on Debian Bookworm, installs locked production 
 
 The service listens on `process.env.PORT`. Do not set `PUBLIC_BASE_URL` to the frontend URL; it must be the backend's public HTTPS origin because generated flyer preview and download URLs are served by this API. The download URL is stable and does not expire while its JPEG remains in storage; it sends the flyer as an attachment for QR-code downloads. `CORS_ORIGIN` must contain the frontend's exact browser origin (scheme and hostname, and any non-default port), without a trailing path. For an iPad app using a WebView, configure the origin that the WebView actually sends. Do not use `*` in production unless the API is intentionally public to any browser origin.
 
-## 4. Verify the deployment
+## 4. Migrate existing event records
+
+Newly finalized games store `gameData.events` as an object keyed by action, such as `pts_2`. Existing games keep their array format until migrated. From a trusted environment with the same `MONGO_URI` configured, run this once:
+
+```sh
+npm run migrate:events
+```
+
+The migration only updates games whose `gameData.events` is still an array. Repeated actions receive numbered keys, and API responses continue to expose events as an array.
+
+## 5. Verify the deployment
 
 Replace the example hostname below with the deployed service URL:
 
