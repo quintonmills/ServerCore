@@ -83,26 +83,6 @@ const generatedMediaSchema = new mongoose.Schema(
   { _id: false },
 );
 
-const playerSchema = new mongoose.Schema(
-  {
-    id: { type: String, required: true, maxlength: 100 },
-    firstName: { type: String, maxlength: 100 },
-    lastName: { type: String, maxlength: 100 },
-    teamId: { type: String, maxlength: 100 },
-    team: { type: String, required: true, enum: ['Team A', 'Team B'] },
-    jersey: { type: String, required: true, maxlength: 10 },
-    name: { type: String, required: true, maxlength: 200 },
-    pts: { type: Number, required: true, min: 0 },
-    reb: { type: Number, required: true, min: 0 },
-    ast: { type: Number, required: true, min: 0 },
-    topPerformer: { type: Boolean },
-    stl: { type: Number, required: true, min: 0 },
-    blk: { type: Number, required: true, min: 0 },
-    to: { type: Number, required: true, min: 0 },
-  },
-  { _id: false },
-);
-
 const playerMediaSchema = new mongoose.Schema(
   {
     playerId: { type: String, required: true, maxlength: 100 },
@@ -139,7 +119,7 @@ const gameSchema = new mongoose.Schema(
         home: { type: teamSchema },
         away: { type: teamSchema },
       },
-      players: { type: [playerSchema], required: true },
+      players: { type: mongoose.Schema.Types.Mixed, required: true },
       boxScore: { type: [boxScoreSchema], default: [] },
       events: { type: [playByPlayEventSchema], default: [] },
     },

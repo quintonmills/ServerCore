@@ -11,6 +11,12 @@ function isDuplicateKeyError(error) {
 
 function omitStoredImages(game) {
   const safeGame = typeof game.toObject === 'function' ? game.toObject() : { ...game };
+  if (safeGame.gameData?.players && !Array.isArray(safeGame.gameData.players)) {
+    const players = safeGame.gameData.players instanceof Map
+      ? [...safeGame.gameData.players.values()]
+      : Object.values(safeGame.gameData.players);
+    safeGame.gameData = { ...safeGame.gameData, players };
+  }
   if (!safeGame.media || typeof safeGame.media !== 'object') return safeGame;
 
   safeGame.media = { ...safeGame.media };
@@ -48,6 +54,23 @@ function readableGameId(location, timestamp) {
 
 function getPlayerImages(input) {
   return input.photos || (input.photo ? [input.photo] : []);
+}
+
+function playersByName(players) {
+  const keyedPlayers = [];
+  const usedKeys = new Set();
+  for (const player of players) {
+    const name = player.name.trim().replace(/[.$\0]/g, '_') || player.id;
+    let key = name;
+    let suffix = 2;
+    while (usedKeys.has(key)) {
+      key = `${name} (${suffix})`;
+      suffix += 1;
+    }
+    usedKeys.add(key);
+    keyedPlayers.push([key, player]);
+  }
+  return Object.fromEntries(keyedPlayers);
 }
 
 async function saveFinalizedGame(GameModel, payload) {
@@ -203,7 +226,9 @@ export function createGameController({
     const now = new Date();
     const gameTimestamp = request.body.startedAt || request.body.completedAt || now;
     const status = (request.body.status || 'COMPLETED').toUpperCase();
-    const playerData = request.body.players.map(({ photo, photos, ...player }) => player);
+    const playerData = playersByName(
+      request.body.players.map(({ photo, photos, ...player }) => player),
+    );
     const gamePayload = {
       gameId: readableGameId(request.body.location, gameTimestamp),
       idempotencyKey: request.body.idempotencyKey ?? request.body.gameId,

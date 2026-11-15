@@ -15,8 +15,8 @@ test('game schema stores reference images and image-generation settings', () => 
     gameData: {
       teamA: { name: 'Red Team', score: 24 },
       teamB: { name: 'Blue Team', score: 18 },
-      players: [
-      {
+      players: {
+      Marcus: {
         id: 'p1',
         firstName: 'Marcus',
         lastName: 'Example',
@@ -31,7 +31,7 @@ test('game schema stores reference images and image-generation settings', () => 
         blk: 0,
         to: 2,
       },
-      {
+      Jordan: {
         id: 'p2',
         team: 'Team B',
         jersey: '4',
@@ -43,7 +43,7 @@ test('game schema stores reference images and image-generation settings', () => 
         blk: 0,
         to: 0,
       },
-      ],
+      },
     },
     media: {
       teamA: { logo: 'data:image/png;base64,aGVsbG8=' },
@@ -66,13 +66,13 @@ test('game schema stores reference images and image-generation settings', () => 
   assert.equal(game.validateSync(), undefined);
   assert.equal(game.media.teamA.logo, 'data:image/png;base64,aGVsbG8=');
   assert.equal(game.media.players[0].photos.length, 3);
-  assert.equal(game.gameData.players[0].firstName, 'Marcus');
-  assert.equal(game.gameData.players[0].lastName, 'Example');
-  assert.equal(game.gameData.players[0].teamId, 'red-team');
+  assert.equal(game.gameData.players.Marcus.firstName, 'Marcus');
+  assert.equal(game.gameData.players.Marcus.lastName, 'Example');
+  assert.equal(game.gameData.players.Marcus.teamId, 'red-team');
   assert.equal(game.media.players.length, 1);
   assert.equal(game.media.imageGeneration.prompt, 'Arena spotlight');
   assert.equal(game.createdAt, undefined);
-  assert.equal(Game.schema.path('gameData.players').instance, 'Array');
+  assert.equal(Game.schema.path('gameData.players').instance, 'Mixed');
   assert.equal(Game.schema.path('gameData.boxScore').instance, 'Array');
   assert.equal(Game.schema.path('timestamps.startedAt').instance, 'Date');
   assert.equal(Game.schema.path('generatedMedia'), undefined);

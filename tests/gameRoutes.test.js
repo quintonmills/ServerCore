@@ -135,7 +135,7 @@ test('finalize stores a readable game ID and returns generated graphics', async 
       {
         ...payload.players[0],
         id: 'p3',
-        name: 'Jordan',
+        name: 'Marcus',
         pts: 14,
         reb: 10,
       },
@@ -218,6 +218,12 @@ test('finalize stores a readable game ID and returns generated graphics', async 
       assert.equal(savedPayload.idempotencyKey, 'finalize-request-101');
       assert.equal(savedPayload.status, 'COMPLETED');
       assert.equal(savedPayload.gameData.boxScore[0].PTS, 14);
+      assert.deepEqual(Object.keys(savedPayload.gameData.players), ['Marcus', 'Alex', 'Marcus (2)']);
+      assert.deepEqual(body.game.gameData.players.map((player) => player.name), [
+        'Marcus',
+        'Alex',
+        'Marcus',
+      ]);
       assert.equal(savedPayload.gameData.events.length, 2);
       assert.equal(savedPayload.gameData.events[0].action, 'PTS_2');
       assert.equal(savedPayload.gameData.events[0].resultingScore.teamA, 2);
@@ -385,7 +391,7 @@ test('persists game history when optional flyer photos or team logos are not sup
     assert.equal(response.status, 200);
     assert.equal(body.game._id, 'saved-without-flyer');
     assert.deepEqual(body.graphics, []);
-    assert.equal(savedPayload.gameData.players[0].photos, undefined);
+    assert.equal(savedPayload.gameData.players.Marcus.photos, undefined);
     assert.equal(savedPayload.status, 'COMPLETED');
     assert.equal(savedPayload.idempotencyKey, 'game-101');
     assert.equal(savedPayload['timestamps.startedAt'], incompletePayload.startedAt);
