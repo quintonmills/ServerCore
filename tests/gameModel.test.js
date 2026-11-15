@@ -13,8 +13,7 @@ test('game schema stores reference images and image-generation settings', () => 
       updatedAt: '2026-10-26T12:00:00.000Z',
     },
     gameData: {
-      teamA: { name: 'Red Team', score: 24 },
-      teamB: { name: 'Blue Team', score: 18 },
+      teamName: 'Red Team',
       players: {
       Marcus: {
         id: 'p1',
@@ -46,7 +45,7 @@ test('game schema stores reference images and image-generation settings', () => 
       },
     },
     media: {
-      teamA: { logo: 'data:image/png;base64,aGVsbG8=' },
+      team: { logo: 'data:image/png;base64,aGVsbG8=' },
       players: [{
         playerId: 'p1',
         photos: [
@@ -64,7 +63,7 @@ test('game schema stores reference images and image-generation settings', () => 
   });
 
   assert.equal(game.validateSync(), undefined);
-  assert.equal(game.media.teamA.logo, 'data:image/png;base64,aGVsbG8=');
+  assert.equal(game.media.team.logo, 'data:image/png;base64,aGVsbG8=');
   assert.equal(game.media.players[0].photos.length, 3);
   assert.equal(game.gameData.players.Marcus.firstName, 'Marcus');
   assert.equal(game.gameData.players.Marcus.lastName, 'Example');
@@ -85,8 +84,7 @@ test('game schema stores an optional idempotency key', () => {
     location: 'ScoreKings Arena',
     timestamps: { createdAt: new Date(), updatedAt: new Date() },
     gameData: {
-      teamA: { name: 'Red Team', score: 2 },
-      teamB: { name: 'Blue Team', score: 0 },
+      teamName: 'Red Team',
       players: [],
     },
   });
@@ -101,7 +99,7 @@ test('game schema stores an optional idempotency key', () => {
   ), false);
 });
 
-test('game schema stores teams, box scores, play-by-play events, and generated media', () => {
+test('game schema stores a team name, box scores, play-by-play events, and generated media', () => {
   const game = new Game({
     gameId: 'game-102',
     location: 'ScoreKings Arena',
@@ -112,12 +110,7 @@ test('game schema stores teams, box scores, play-by-play events, and generated m
       updatedAt: '2026-10-26T13:00:00.000Z',
     },
     gameData: {
-      teamA: { name: 'Red Team', score: 24 },
-      teamB: { name: 'Blue Team', score: 18 },
-      teams: {
-        home: { teamId: 'red', name: 'Red Team', score: 24 },
-        away: { teamId: 'blue', name: 'Blue Team', score: 18 },
-      },
+      teamName: 'Red Team',
       players: [],
       boxScore: [{
         playerId: 'player-1',
@@ -157,8 +150,7 @@ test('game schema stores teams, box scores, play-by-play events, and generated m
       location: 'ScoreKings Arena',
       timestamps: { createdAt: new Date(), updatedAt: new Date() },
       gameData: {
-        teamA: { name: 'Red Team', score: 4 },
-        teamB: { name: 'Blue Team', score: 0 },
+        teamName: 'Red Team',
         players: [{
           id: 'player-1',
           team: 'Team A',
@@ -184,7 +176,7 @@ test('game schema stores teams, box scores, play-by-play events, and generated m
   assert.equal(game.gameData.boxScore[0].FG3A, 5);
   assert.equal(game.gameData.events[0].type, 'shot_made');
   assert.equal(game.media.generatedMedia[0].downloadUrl, 'https://api.example.com/flyer/download');
-  assert.equal(game.gameData.teams.home.teamId, 'red');
+  assert.equal(game.gameData.teamName, 'Red Team');
 });
 
 test('player and team schemas expose the identifiers and metric fields used by the API', () => {
@@ -210,8 +202,7 @@ test('game and player schemas store licensing metadata and typed play-by-play fi
     location: 'ScoreKings Arena',
     timestamps: { createdAt: new Date(), updatedAt: new Date() },
     gameData: {
-      teamA: { name: 'Red Team', score: 2 },
-      teamB: { name: 'Blue Team', score: 0 },
+      teamName: 'Red Team',
       players: [],
       events: [{
         period: 'Q1',

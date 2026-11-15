@@ -72,18 +72,9 @@ Application and HTTP request logs are newline-delimited JSON. Each request recei
   "gameId": "game-101",
   "idempotencyKey": "finalize-game-101",
   "location": "Marietta Rec League",
-  "teamA": {
-    "teamId": "red-team",
-    "name": "Red Team",
-    "score": 24,
-    "logo": "data:image/png;base64,<base64-encoded-team-logo>"
-  },
-  "teamB": {
-    "teamId": "blue-team",
-    "name": "Blue Team",
-    "score": 18,
-    "logo": "data:image/png;base64,<base64-encoded-team-logo>"
-  },
+  "teamName": "Red Team",
+  "teamId": "red-team",
+  "teamLogo": "data:image/png;base64,<base64-encoded-team-logo>",
   "players": [
     {
       "id": "p1",
@@ -143,7 +134,7 @@ Application and HTTP request logs are newline-delimited JSON. Each request recei
 }
 ```
 
-The `players` array can include the full five-player lineup, with each player carrying their own stats and optional one to three `photos`. Supply PNG, JPEG, or WebP image data URLs, each no larger than 5 MB. The API saves stats for every player, but generates graphics only for the up to five highest-ranked impressive stat lines that also have one to three photos and a logo for their team. Rec-league thresholds are adjusted for 40-minute running-clock games: Tier 2 starts at 12+ points, 6+ assists, or a double-double in points/rebounds/assists; Tier 3 starts at 18+ points or `topPerformer: true`. Players are ranked by points, rebounds, then assists. Generation requests run in parallel. Missing graphic assets do not prevent the game and its stats from being persisted. The existing singular `photo` field remains accepted for older clients. `topPerformer` is an optional boolean on a player; setting it to `true` selects the top visual tier and qualifies the player for a graphic. `boxScore` is optional; when omitted, player stats are used to build it. `events` is an optional array of play-by-play objects; the typed fields are `period`, `playerId`, `action`, `timestamp`, and `resultingScore`. Existing event properties are retained for older clients. Box-score entries can provide uppercase or lowercase stat keys. `metadata` optionally stores `testMode` and `verifiedForLicensing` booleans. `teamId` values identify corresponding Team and Player records. `imageGeneration` is optional: `prompt` adds compatible art direction, `size` accepts `1024x1024`, `1024x1536`, `1536x1024`, or `auto`, and `quality` accepts `low`, `medium`, `high`, or `auto`. Defaults are `1024x1536` and `high`. Uploaded player photos, team logos, and image-generation settings are saved under `media`; game teams, players, box scores, and events are stored under `gameData`; lifecycle dates are stored under `timestamps`. In the MongoDB document, `gameData.players` is keyed by player name for easier browsing; duplicate names get a numbered suffix such as `Marcus (2)`. The API continues to accept and return `players` as an array. The API limits the complete stored game payload to 14 MB to stay safely below MongoDB's 16 MB document limit. Image data is omitted from the response to keep it small. The saved `gameId` is a readable location-and-timestamp identifier; `idempotencyKey` remains the unique key used to safely retry finalization.
+The `players` array can include the full five-player lineup, with each player carrying their own stats and optional one to three `photos`. Supply the single team name as `teamName`, with optional `teamId`, `teamLogo`, and `teamLogoUrl` fields; a separate opponent is not required. Supply PNG, JPEG, or WebP image data URLs, each no larger than 5 MB. The API saves stats for every player, but generates graphics only for the up to five highest-ranked impressive stat lines that also have one to three photos and a team logo. Rec-league thresholds are adjusted for 40-minute running-clock games: Tier 2 starts at 12+ points, 6+ assists, or a double-double in points/rebounds/assists; Tier 3 starts at 18+ points or `topPerformer: true`. Players are ranked by points, rebounds, then assists. Generation requests run in parallel. Missing graphic assets do not prevent the game and its stats from being persisted. The existing singular `photo` field remains accepted for older clients. `topPerformer` is an optional boolean on a player; setting it to `true` selects the top visual tier and qualifies the player for a graphic. `boxScore` is optional; when omitted, player stats are used to build it. `events` is an optional array of play-by-play objects; the typed fields are `period`, `playerId`, `action`, `timestamp`, and `resultingScore`. Existing event properties are retained for older clients. Box-score entries can provide uppercase or lowercase stat keys. `metadata` optionally stores `testMode` and `verifiedForLicensing` booleans. `teamId` values identify corresponding Team and Player records. `imageGeneration` is optional: `prompt` adds compatible art direction, `size` accepts `1024x1024`, `1024x1536`, `1536x1024`, or `auto`, and `quality` accepts `low`, `medium`, `high`, or `auto`. Defaults are `1024x1536` and `high`. Uploaded player photos, the team logo, and image-generation settings are saved under `media`; the team name and players, box scores, and events are stored under `gameData`; lifecycle dates are stored under `timestamps`. In MongoDB, the team is stored at `gameData.teamName` and the logo under `media.team`; `gameData.players` is keyed by player name for easier browsing, with numbered suffixes for duplicate names. The API continues to accept and return `players` as an array. The API limits the complete stored game payload to 14 MB to stay safely below MongoDB's 16 MB document limit. Image data is omitted from the response to keep it small. Older two-team request payloads are still accepted during migration, but are normalized to the single-team document shape. The saved `gameId` is a readable location-and-timestamp identifier; `idempotencyKey` remains the unique key used to safely retry finalization.
 
 The API returns `200 OK` with the upserted game and a `graphics` array containing zero to five generated flyers. Each graphic includes its player's ID and name, generated file path, public preview URL, and stable download URL:
 
@@ -162,8 +153,7 @@ The API returns `200 OK` with the upserted game and a `graphics` array containin
       "updatedAt": "2026-10-21T12:00:00.000Z"
     },
     "gameData": {
-      "teamA": { "name": "Red Team", "score": 24 },
-      "teamB": { "name": "Blue Team", "score": 18 },
+      "teamName": "Red Team",
       "players": [
         {
           "id": "p1",
@@ -178,10 +168,6 @@ The API returns `200 OK` with the upserted game and a `graphics` array containin
           "to": 2
         }
       ],
-      "teams": {
-        "home": { "teamId": "red-team", "name": "Red Team", "score": 24 },
-        "away": { "teamId": "blue-team", "name": "Blue Team", "score": 18 }
-      },
       "boxScore": [
         { "playerId": "p1", "PTS": 14, "REB": 5, "AST": 3 }
       ],
@@ -190,8 +176,7 @@ The API returns `200 OK` with the upserted game and a `graphics` array containin
       ]
     },
     "media": {
-      "teamA": {},
-      "teamB": {},
+      "team": {},
       "players": [],
       "generatedMedia": [
         {
@@ -220,7 +205,7 @@ The API returns `200 OK` with the upserted game and a `graphics` array containin
 
 Every valid finalization uses `idempotencyKey` as an atomic upsert key: sending it again updates that game rather than creating a duplicate. If omitted, `idempotencyKey` defaults to `gameId`. A unique sparse MongoDB index enforces this behavior; `gameId` itself is not unique, so submissions with different idempotency keys do not collide. On startup, the API removes the legacy unique `gameId_1` index if it exists. Player career totals (`pts`, `reb`, `ast`, `stl`, `blk`, `to`, and `gamesPlayed`) are updated atomically with `$inc` for every finalize request; repeated finalizations increment them again. Team and player records are upserted when team/player IDs are supplied. The response is `200 OK` for both first and repeated finalizations.
 
-Input is validated before persistence or rendering. Invalid fields, unexpected keys (including filesystem paths), unsupported player teams, non-numeric or negative scores/stats, and malformed JSON return a `400` JSON error. For example:
+Input is validated before persistence or rendering. Invalid fields, unexpected keys (including filesystem paths), unsupported player team values, non-numeric or negative stats, and malformed JSON return a `400` JSON error. The current client sends `teamName` and an optional `teamLogo`; legacy team-object payloads remain accepted during migration. For example:
 
 ```json
 {

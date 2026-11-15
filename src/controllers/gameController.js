@@ -20,13 +20,9 @@ function omitStoredImages(game) {
   if (!safeGame.media || typeof safeGame.media !== 'object') return safeGame;
 
   safeGame.media = { ...safeGame.media };
-  if (safeGame.media.teamA) {
-    safeGame.media.teamA = { ...safeGame.media.teamA };
-    delete safeGame.media.teamA.logo;
-  }
-  if (safeGame.media.teamB) {
-    safeGame.media.teamB = { ...safeGame.media.teamB };
-    delete safeGame.media.teamB.logo;
+  if (safeGame.media.team) {
+    safeGame.media.team = { ...safeGame.media.team };
+    delete safeGame.media.team.logo;
   }
   if (Array.isArray(safeGame.media.players)) {
     safeGame.media.players = safeGame.media.players.map((player) => ({ ...player }));
@@ -73,14 +69,25 @@ function playersByName(players) {
   return Object.fromEntries(keyedPlayers);
 }
 
+function getTeamData(payload) {
+  if (payload.teamName !== undefined) {
+    return {
+      teamId: payload.teamId,
+      name: payload.teamName,
+      logo: payload.teamLogo,
+      logoUrl: payload.teamLogoUrl,
+    };
+  }
+  return payload.teams?.home || payload.teamA;
+}
+
 async function saveFinalizedGame(GameModel, payload) {
   const { gameId, timestamps, ...setPayload } = payload;
   const { media, ...gameFields } = setPayload;
   const $set = {
     ...gameFields,
     'timestamps.updatedAt': timestamps.updatedAt,
-    'media.teamA': media.teamA,
-    'media.teamB': media.teamB,
+    'media.team': media.team,
     'media.players': media.players,
     'media.imageGeneration': media.imageGeneration,
   };
@@ -92,6 +99,10 @@ async function saveFinalizedGame(GameModel, payload) {
   }
   const update = {
     $set,
+    $unset: {
+      'media.teamA': '',
+      'media.teamB': '',
+    },
     $setOnInsert: {
       gameId,
       'timestamps.createdAt': timestamps.createdAt,
@@ -109,7 +120,7 @@ async function saveFinalizedGame(GameModel, payload) {
 
     const finalizedGame = await GameModel.findOneAndUpdate(
       { idempotencyKey: payload.idempotencyKey },
-      { $set },
+      { $set, $unset: update.$unset },
       { new: true, runValidators: true },
     );
     if (!finalizedGame) throw error;
@@ -122,11 +133,7 @@ function getCanonicalBoxScore(payload) {
   return source.map((player) => {
     const playerId = player.playerId || player.id;
     const legacyPlayer = payload.players.find((entry) => (entry.playerId || entry.id) === playerId);
-    const homeTeam = payload.teams?.home || payload.teamA;
-    const awayTeam = payload.teams?.away || payload.teamB;
-    const team = player.team === 'Team B' || legacyPlayer?.team === 'Team B'
-      ? awayTeam
-      : homeTeam;
+    const team = getTeamData(payload);
     const [fallbackFirstName, ...fallbackLastName] = (player.name || legacyPlayer?.name || '').split(' ');
     return {
       playerId,
@@ -170,17 +177,13 @@ async function updateCareerStats(PlayerModel, boxScore) {
 }
 
 async function updateTeams(TeamModel, payload) {
-  for (const team of [
-    payload.teams?.home || payload.teamA,
-    payload.teams?.away || payload.teamB,
-  ]) {
-    if (!team.teamId) continue;
-    await TeamModel.findOneAndUpdate(
-      { teamId: team.teamId },
-      { $set: { name: team.name, ...(team.logoUrl ? { logoUrl: team.logoUrl } : {}) } },
-      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
-    );
-  }
+  const team = getTeamData(payload);
+  if (!team.teamId) return;
+  await TeamModel.findOneAndUpdate(
+    { teamId: team.teamId },
+    { $set: { name: team.name, ...(team.logoUrl ? { logoUrl: team.logoUrl } : {}) } },
+    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+  );
 }
 
 export function createGameController({
@@ -207,9 +210,9 @@ export function createGameController({
     const selectedPlayers = selectPlayersForCards(request.body.players);
 
     const playerInputs = new Map(request.body.players.map((player) => [player.id, player]));
+    const team = getTeamData(request.body);
     const players = selectedPlayers.filter((player) => {
       const input = playerInputs.get(player.id);
-      const team = player.team === 'Team A' ? request.body.teamA : request.body.teamB;
       const imageCount = getPlayerImages(input).length;
       return (imageCount === 1 || imageCount === 2 || imageCount === 3) && Boolean(team.logo);
     });
@@ -221,8 +224,6 @@ export function createGameController({
       quality: suppliedImageGeneration.quality || 'high',
     };
     const boxScore = getCanonicalBoxScore(request.body);
-    const homeTeam = request.body.teams?.home || request.body.teamA;
-    const awayTeam = request.body.teams?.away || request.body.teamB;
     const now = new Date();
     const gameTimestamp = request.body.startedAt || request.body.completedAt || now;
     const status = (request.body.status || 'COMPLETED').toUpperCase();
@@ -243,25 +244,16 @@ export function createGameController({
         updatedAt: now,
       },
       gameData: {
-        teamA: { teamId: request.body.teamA.teamId, name: request.body.teamA.name, score: request.body.teamA.score },
-        teamB: { teamId: request.body.teamB.teamId, name: request.body.teamB.name, score: request.body.teamB.score },
-        teams: {
-          home: { teamId: homeTeam.teamId, name: homeTeam.name, score: homeTeam.score },
-          away: { teamId: awayTeam.teamId, name: awayTeam.name, score: awayTeam.score },
-        },
+        teamName: team.name,
         players: playerData,
         boxScore,
         events: request.body.events || [],
       },
       metadata: request.body.metadata || {},
       media: {
-        teamA: {
-          ...(request.body.teamA.logo ? { logo: request.body.teamA.logo } : {}),
-          ...(request.body.teamA.logoUrl ? { logoUrl: request.body.teamA.logoUrl } : {}),
-        },
-        teamB: {
-          ...(request.body.teamB.logo ? { logo: request.body.teamB.logo } : {}),
-          ...(request.body.teamB.logoUrl ? { logoUrl: request.body.teamB.logoUrl } : {}),
+        team: {
+          ...(team.logo ? { logo: team.logo } : {}),
+          ...(team.logoUrl ? { logoUrl: team.logoUrl } : {}),
         },
         players: request.body.players
           .filter((player) => player.photo || player.photos)
@@ -280,13 +272,11 @@ export function createGameController({
       await Promise.all(
         players.flatMap((player) => {
           const input = playerInputs.get(player.id);
-          const team = player.team === 'Team A' ? request.body.teamA : request.body.teamB;
-          const teamName = player.team === 'Team A' ? 'teamA.logo' : 'teamB.logo';
           return [
             ...getPlayerImages(input).map((image, index) =>
               validateRasterImageDataUrl(image, `Player ${player.id} photo ${index + 1}`),
             ),
-            ...(team.logo ? [validateRasterImageDataUrl(team.logo, teamName)] : []),
+            ...(team.logo ? [validateRasterImageDataUrl(team.logo, 'teamLogo')] : []),
           ];
         }),
       );
@@ -315,7 +305,6 @@ export function createGameController({
 
       const generationResults = await Promise.allSettled(players.map(async (player) => {
         const input = playerInputs.get(player.id);
-        const team = player.team === 'Team A' ? request.body.teamA : request.body.teamB;
         const graphic = await generateFlyer(player, finalizedGame, {
           publicBaseUrl,
           playerImages: getPlayerImages(input),

@@ -4,6 +4,10 @@ const rootFields = new Set([
   'gameId',
   'idempotencyKey',
   'location',
+  'teamName',
+  'teamId',
+  'teamLogo',
+  'teamLogoUrl',
   'teamA',
   'teamB',
   'teams',
@@ -359,8 +363,21 @@ export function validateGamePayload(payload) {
     checkString(payload.idempotencyKey, 'idempotencyKey', errors, 100);
   }
   checkString(payload.location, 'location', errors, 200);
-  validateTeam(payload.teamA, 'teamA', errors);
-  validateTeam(payload.teamB, 'teamB', errors);
+  if (payload.teamName !== undefined) {
+    checkString(payload.teamName, 'teamName', errors, 200);
+    if (payload.teamId !== undefined) checkString(payload.teamId, 'teamId', errors, 100);
+    checkImageDataUrl(payload.teamLogo, 'teamLogo', errors);
+    if (payload.teamLogoUrl !== undefined) checkString(payload.teamLogoUrl, 'teamLogoUrl', errors, 2048);
+  } else {
+    validateTeam(payload.teamA, 'teamA', errors);
+    validateTeam(payload.teamB, 'teamB', errors);
+  }
+  if (payload.teamName !== undefined && payload.teamA !== undefined) {
+    validateTeam(payload.teamA, 'teamA', errors);
+  }
+  if (payload.teamName !== undefined && payload.teamB !== undefined) {
+    validateTeam(payload.teamB, 'teamB', errors);
+  }
   validateTeams(payload.teams, errors);
   for (const field of ['status']) {
     if (payload[field] !== undefined) checkString(payload[field], field, errors, 50);

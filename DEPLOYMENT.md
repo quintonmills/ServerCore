@@ -59,16 +59,8 @@ Example request shape (replace each image placeholder with a real base64 data UR
 {
   "gameId": "pilot-game-001",
   "location": "Gym Name",
-  "teamA": {
-    "name": "Home",
-    "score": 24,
-    "logo": "data:image/png;base64,<base64-encoded-team-logo>"
-  },
-  "teamB": {
-    "name": "Away",
-    "score": 18,
-    "logo": "data:image/png;base64,<base64-encoded-team-logo>"
-  },
+  "teamName": "Home",
+  "teamLogo": "data:image/png;base64,<base64-encoded-team-logo>",
   "players": [
     {
       "id": "player-001",

@@ -9,15 +9,6 @@ const imageGenerationSchema = new mongoose.Schema(
   { _id: false },
 );
 
-const teamSchema = new mongoose.Schema(
-  {
-    teamId: { type: String, maxlength: 100 },
-    name: { type: String, required: true, maxlength: 200 },
-    score: { type: Number, required: true, min: 0 },
-  },
-  { _id: false },
-);
-
 const mediaTeamSchema = new mongoose.Schema(
   {
     logo: { type: String, maxlength: 7 * 1024 * 1024 },
@@ -113,19 +104,15 @@ const gameSchema = new mongoose.Schema(
       updatedAt: { type: Date, required: true },
     },
     gameData: {
-      teamA: { type: teamSchema, required: true },
-      teamB: { type: teamSchema, required: true },
-      teams: {
-        home: { type: teamSchema },
-        away: { type: teamSchema },
-      },
+      teamName: { type: String, required: true, maxlength: 200 },
       players: { type: mongoose.Schema.Types.Mixed, required: true },
       boxScore: { type: [boxScoreSchema], default: [] },
       events: { type: [playByPlayEventSchema], default: [] },
     },
     media: {
-      teamA: { type: mediaTeamSchema, default: () => ({}) },
-      teamB: { type: mediaTeamSchema, default: () => ({}) },
+      team: { type: mediaTeamSchema, default: () => ({}) },
+      teamA: { type: mediaTeamSchema, default: undefined },
+      teamB: { type: mediaTeamSchema, default: undefined },
       players: { type: [playerMediaSchema], default: [] },
       generatedMedia: { type: [generatedMediaSchema], default: [] },
       imageGeneration: { type: imageGenerationSchema },

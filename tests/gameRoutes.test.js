@@ -14,8 +14,9 @@ const outputDirectory = fileURLToPath(new URL('../output/', import.meta.url));
 const payload = {
   gameId: 'game-101',
   location: 'Marietta Rec League',
-  teamA: { teamId: 'red-team', name: 'Red Team', score: 24, logo: pngDataUrl },
-  teamB: { teamId: 'blue-team', name: 'Blue Team', score: 18 },
+  teamName: 'Red Team',
+  teamId: 'red-team',
+  teamLogo: pngDataUrl,
   imageGeneration: { prompt: 'arena spotlight', quality: 'medium' },
   players: [
     {
@@ -80,6 +81,12 @@ function applyGameUpdate(existing, update) {
   for (const [path, value] of Object.entries(update.$set || {})) {
     applyPath(path, value);
   }
+  for (const path of Object.keys(update.$unset || {})) {
+    const segments = path.split('.');
+    const field = segments.pop();
+    const parent = segments.reduce((current, segment) => current?.[segment], game);
+    if (parent) delete parent[field];
+  }
   if (!existing) {
     for (const [path, value] of Object.entries(update.$setOnInsert || {})) {
       applyPath(path, value);
@@ -115,7 +122,6 @@ test('finalize stores a readable game ID and returns generated graphics', async 
   const multiPlayerPayload = {
     ...payload,
     idempotencyKey: 'finalize-request-101',
-    teamB: { ...payload.teamB, logo: pngDataUrl },
     boxScore: [
       ...payload.boxScore,
       { playerId: 'p2', firstName: 'Alex', PTS: 18 },
@@ -148,6 +154,10 @@ test('finalize stores a readable game ID and returns generated graphics', async 
         return savedGame;
       }
       savedPayload = update.$set;
+      assert.deepEqual(update.$unset, {
+        'media.teamA': '',
+        'media.teamB': '',
+      });
       assert.deepEqual(filter, { idempotencyKey: 'finalize-request-101' });
       assert.deepEqual(options, {
         new: true,
@@ -233,16 +243,22 @@ test('finalize stores a readable game ID and returns generated graphics', async 
       assert.equal(statUpdates[0].update.$inc['careerStats.gamesPlayed'], 1);
       assert.equal(savedPayload.metadata.verifiedForLicensing, true);
       assert.equal(statUpdates[0].update.$set.teamId, 'red-team');
-      assert.equal(teamUpdates.length, 2);
-      assert.equal(savedPayload.gameData.teams.home.teamId, 'red-team');
+      assert.equal(teamUpdates.length, 1);
+      assert.equal(savedPayload.gameData.teamName, 'Red Team');
+      assert.deepEqual(Object.keys(savedPayload.gameData).sort(), [
+        'boxScore',
+        'events',
+        'players',
+        'teamName',
+      ]);
       assert.deepEqual(savedPayload['media.players'][0].photos, multiPlayerPayload.players[0].photos);
-      assert.equal(savedPayload['media.teamA'].logo, multiPlayerPayload.teamA.logo);
+      assert.equal(savedPayload['media.team'].logo, multiPlayerPayload.teamLogo);
       assert.deepEqual(savedPayload['media.imageGeneration'], {
         ...multiPlayerPayload.imageGeneration,
         size: '1024x1536',
       });
       assert.equal(body.game.gameData.players[0].photos, undefined);
-      assert.equal(body.game.media.teamA.logo, undefined);
+      assert.equal(body.game.media.team.logo, undefined);
       assert.equal(renderedPlayers.length, 3);
 
       const downloadUrl = new URL(body.graphics[0].downloadUrl);
@@ -365,7 +381,7 @@ test('persists game history when optional flyer photos or team logos are not sup
   incompletePayload.startedAt = '2026-10-26T12:00:00.000Z';
   incompletePayload.completedAt = '2026-10-26T13:00:00.000Z';
   delete incompletePayload.players[0].photos;
-  delete incompletePayload.teamA.logo;
+  delete incompletePayload.teamLogo;
   const app = createTestApp({
     GameModel: {
       async findOneAndUpdate(_filter, update) {
