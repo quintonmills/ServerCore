@@ -1,14 +1,16 @@
 export function eventsByAction(events) {
   const keyedEvents = [];
   const usedKeys = new Set();
-  for (const [index, event] of events.entries()) {
+  const entries = events instanceof Map
+    ? [...events.values()]
+    : Array.isArray(events) ? events : Object.values(events || {});
+  for (const [index, event] of entries.entries()) {
     const label = [
       event.action,
       event.type,
       event.playerId,
     ].find((value) => typeof value === 'string' && value.trim())
       ?.trim()
-      .toLowerCase()
       .replace(/[.$\0]/g, '_') || `event ${index + 1}`;
     let key = label;
     let suffix = 2;

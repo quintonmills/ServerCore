@@ -13,12 +13,12 @@ async function migrateEvents() {
   await mongoose.connect(mongoUri);
   try {
     const cursor = Game.collection.find(
-      { 'gameData.events': { $type: 'array' } },
+      { 'gameData.events': { $exists: true } },
       { projection: { _id: 1, 'gameData.events': 1 } },
     );
     for await (const game of cursor) {
       const result = await Game.collection.updateOne(
-        { _id: game._id, 'gameData.events': { $type: 'array' } },
+        { _id: game._id },
         { $set: { 'gameData.events': eventsByAction(game.gameData.events) } },
       );
       migrated += result.modifiedCount;

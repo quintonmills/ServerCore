@@ -39,13 +39,13 @@ The service listens on `process.env.PORT`. Do not set `PUBLIC_BASE_URL` to the f
 
 ## 4. Migrate existing event records
 
-Newly finalized games store `gameData.events` as an object keyed by action, such as `pts_2`. Existing games keep their array format until migrated. From a trusted environment with the same `MONGO_URI` configured, run this once:
+Newly finalized games store `gameData.events` as an object keyed by the exact action, such as `PTS_2`. Existing games keep their array format until migrated. From a trusted environment with the same `MONGO_URI` configured, run this once:
 
 ```sh
 npm run migrate:events
 ```
 
-The migration only updates games whose `gameData.events` is still an array. Repeated actions receive numbered keys, and API responses continue to expose events as an array.
+The migration updates stored event arrays and previously converted event objects, using each event's action casing as the key. Repeated actions receive numbered keys, and API responses continue to expose events as an array.
 
 ## 5. Verify the deployment
 

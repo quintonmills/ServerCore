@@ -206,7 +206,7 @@ test('game and player schemas store licensing metadata and typed play-by-play fi
       teamName: 'Red Team',
       players: [],
       events: {
-        pts_2: {
+        PTS_2: {
           period: 'Q1',
           playerId: 'player-1',
           action: 'PTS_2',
@@ -227,9 +227,9 @@ test('game and player schemas store licensing metadata and typed play-by-play fi
   assert.equal(game.validateSync(), undefined);
   assert.equal(game.status, 'COMPLETED');
   assert.equal(game.metadata.verifiedForLicensing, true);
-  assert.equal(game.gameData.events.get('pts_2').action, 'PTS_2');
-  assert.equal(game.gameData.events.get('pts_2').resultingScore.teamA, 2);
-  assert.deepEqual(Object.keys(game.toObject({ flattenMaps: true }).gameData.events), ['pts_2']);
+  assert.equal(game.gameData.events.get('PTS_2').action, 'PTS_2');
+  assert.equal(game.gameData.events.get('PTS_2').resultingScore.teamA, 2);
+  assert.deepEqual(Object.keys(game.toObject({ flattenMaps: true }).gameData.events), ['PTS_2']);
   assert.equal(player.validateSync(), undefined);
   assert.equal(game.media.generatedMedia.length, 0);
 });

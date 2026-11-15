@@ -235,9 +235,9 @@ test('finalize stores a readable game ID and returns generated graphics', async 
         'Alex',
         'Marcus',
       ]);
-      assert.deepEqual(Object.keys(savedPayload.gameData.events), ['pts_2', 'pts_2 (2)']);
-      assert.equal(savedPayload.gameData.events.pts_2.action, 'PTS_2');
-      assert.equal(savedPayload.gameData.events.pts_2.resultingScore.teamA, 2);
+      assert.deepEqual(Object.keys(savedPayload.gameData.events), ['PTS_2', 'PTS_2 (2)']);
+      assert.equal(savedPayload.gameData.events.PTS_2.action, 'PTS_2');
+      assert.equal(savedPayload.gameData.events.PTS_2.resultingScore.teamA, 2);
       assert.equal(statUpdates.length, 3);
       assert.deepEqual(statUpdates[0].filter, { playerId: 'p1' });
       assert.equal(statUpdates[0].update.$inc['careerStats.pts'], 14);
@@ -415,7 +415,7 @@ test('persists game history when optional flyer photos or team logos are not sup
     assert.equal(savedPayload['timestamps.completedAt'], incompletePayload.completedAt);
     assert.equal(savedPayload['gameData'].boxScore[0].playerId, 'p1');
     assert.equal(savedPayload['gameData'].boxScore[0].PTS, 14);
-    assert.deepEqual(Object.keys(savedPayload.gameData.events), ['pts_2']);
+    assert.deepEqual(Object.keys(savedPayload.gameData.events), ['PTS_2']);
     assert.deepEqual(savedPayload.metadata, { testMode: false, verifiedForLicensing: true });
   });
 });
