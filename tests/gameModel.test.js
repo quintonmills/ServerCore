@@ -72,6 +72,7 @@ test('game schema stores reference images and image-generation settings', () => 
   assert.equal(game.media.imageGeneration.prompt, 'Arena spotlight');
   assert.equal(game.createdAt, undefined);
   assert.equal(Game.schema.path('gameData.players').instance, 'Mixed');
+  assert.equal(Game.schema.path('gameData.events').instance, 'Map');
   assert.equal(Game.schema.path('gameData.boxScore').instance, 'Array');
   assert.equal(Game.schema.path('timestamps.startedAt').instance, 'Date');
   assert.equal(Game.schema.path('generatedMedia'), undefined);
@@ -132,7 +133,7 @@ test('game schema stores a team name, box scores, play-by-play events, and gener
         PF: 2,
         PLUS_MINUS: -3,
       }],
-      events: [{ type: 'shot_made', period: 1, points: 2 }],
+      events: { shot_made: { type: 'shot_made', period: 1, points: 2 } },
     },
     media: {
       generatedMedia: [{
@@ -174,7 +175,7 @@ test('game schema stores a team name, box scores, play-by-play events, and gener
   assert.equal(game.gameData.boxScore[0].PTS, 14);
   assert.equal(game.gameData.boxScore[0].PLUS_MINUS, -3);
   assert.equal(game.gameData.boxScore[0].FG3A, 5);
-  assert.equal(game.gameData.events[0].type, 'shot_made');
+  assert.equal(game.gameData.events.get('shot_made').type, 'shot_made');
   assert.equal(game.media.generatedMedia[0].downloadUrl, 'https://api.example.com/flyer/download');
   assert.equal(game.gameData.teamName, 'Red Team');
 });
@@ -204,13 +205,15 @@ test('game and player schemas store licensing metadata and typed play-by-play fi
     gameData: {
       teamName: 'Red Team',
       players: [],
-      events: [{
-        period: 'Q1',
-        playerId: 'player-1',
-        action: 'PTS_2',
-        timestamp: '2026-10-26T12:00:00.000Z',
-        resultingScore: { teamA: 2, teamB: 0 },
-      }],
+      events: {
+        pts_2: {
+          period: 'Q1',
+          playerId: 'player-1',
+          action: 'PTS_2',
+          timestamp: '2026-10-26T12:00:00.000Z',
+          resultingScore: { teamA: 2, teamB: 0 },
+        },
+      },
     },
     status: 'COMPLETED',
     metadata: { testMode: false, verifiedForLicensing: true },
@@ -224,8 +227,8 @@ test('game and player schemas store licensing metadata and typed play-by-play fi
   assert.equal(game.validateSync(), undefined);
   assert.equal(game.status, 'COMPLETED');
   assert.equal(game.metadata.verifiedForLicensing, true);
-  assert.equal(game.gameData.events[0].action, 'PTS_2');
-  assert.equal(game.gameData.events[0].resultingScore.teamA, 2);
+  assert.equal(game.gameData.events.get('pts_2').action, 'PTS_2');
+  assert.equal(game.gameData.events.get('pts_2').resultingScore.teamA, 2);
   assert.equal(player.validateSync(), undefined);
   assert.equal(game.media.generatedMedia.length, 0);
 });

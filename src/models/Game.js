@@ -107,7 +107,7 @@ const gameSchema = new mongoose.Schema(
       teamName: { type: String, required: true, maxlength: 200 },
       players: { type: mongoose.Schema.Types.Mixed, required: true },
       boxScore: { type: [boxScoreSchema], default: [] },
-      events: { type: [playByPlayEventSchema], default: [] },
+      events: { type: Map, of: playByPlayEventSchema, default: () => new Map() },
     },
     media: {
       team: { type: mediaTeamSchema, default: () => ({}) },

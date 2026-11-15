@@ -127,7 +127,7 @@ test('finalize stores a readable game ID and returns generated graphics', async 
       { playerId: 'p2', firstName: 'Alex', PTS: 18 },
       { playerId: 'p3', firstName: 'Jordan', PTS: 14, REB: 8 },
     ],
-    events: [...payload.events, { type: 'rebound', period: 2, playerId: 'p3' }],
+    events: [...payload.events, { action: 'PTS_2', period: 2, playerId: 'p3' }],
     players: [
       ...payload.players,
       {
@@ -210,6 +210,7 @@ test('finalize stores a readable game ID and returns generated graphics', async 
       assert.match(body.game.gameId, /^marietta-rec-league-/);
       assert.equal(body.game._id, 'mongo-game-id');
       assert.equal(body.game.gameData.events.length, 2);
+      assert.deepEqual(body.game.gameData.events.map((event) => event.action), ['PTS_2', 'PTS_2']);
       assert.equal(body.game.gameData.boxScore.length, 3);
       assert.equal(body.game.media.generatedMedia[0].publicUrl, body.graphics[0].publicUrl);
       assert.equal(body.graphics.length, 3);
@@ -234,9 +235,9 @@ test('finalize stores a readable game ID and returns generated graphics', async 
         'Alex',
         'Marcus',
       ]);
-      assert.equal(savedPayload.gameData.events.length, 2);
-      assert.equal(savedPayload.gameData.events[0].action, 'PTS_2');
-      assert.equal(savedPayload.gameData.events[0].resultingScore.teamA, 2);
+      assert.deepEqual(Object.keys(savedPayload.gameData.events), ['pts_2', 'pts_2 (2)']);
+      assert.equal(savedPayload.gameData.events.pts_2.action, 'PTS_2');
+      assert.equal(savedPayload.gameData.events.pts_2.resultingScore.teamA, 2);
       assert.equal(statUpdates.length, 3);
       assert.deepEqual(statUpdates[0].filter, { playerId: 'p1' });
       assert.equal(statUpdates[0].update.$inc['careerStats.pts'], 14);
@@ -414,7 +415,7 @@ test('persists game history when optional flyer photos or team logos are not sup
     assert.equal(savedPayload['timestamps.completedAt'], incompletePayload.completedAt);
     assert.equal(savedPayload['gameData'].boxScore[0].playerId, 'p1');
     assert.equal(savedPayload['gameData'].boxScore[0].PTS, 14);
-    assert.equal(savedPayload['gameData'].events.length, 1);
+    assert.deepEqual(Object.keys(savedPayload.gameData.events), ['pts_2']);
     assert.deepEqual(savedPayload.metadata, { testMode: false, verifiedForLicensing: true });
   });
 });

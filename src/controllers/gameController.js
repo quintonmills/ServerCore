@@ -17,6 +17,12 @@ function omitStoredImages(game) {
       : Object.values(safeGame.gameData.players);
     safeGame.gameData = { ...safeGame.gameData, players };
   }
+  if (safeGame.gameData?.events && !Array.isArray(safeGame.gameData.events)) {
+    const events = safeGame.gameData.events instanceof Map
+      ? [...safeGame.gameData.events.values()]
+      : Object.values(safeGame.gameData.events);
+    safeGame.gameData = { ...safeGame.gameData, events };
+  }
   if (!safeGame.media || typeof safeGame.media !== 'object') return safeGame;
 
   safeGame.media = { ...safeGame.media };
@@ -67,6 +73,30 @@ function playersByName(players) {
     keyedPlayers.push([key, player]);
   }
   return Object.fromEntries(keyedPlayers);
+}
+
+function eventsByAction(events) {
+  const keyedEvents = [];
+  const usedKeys = new Set();
+  for (const [index, event] of events.entries()) {
+    const label = [
+      event.action,
+      event.type,
+      event.playerId,
+    ].find((value) => typeof value === 'string' && value.trim())
+      ?.trim()
+      .toLowerCase()
+      .replace(/[.$\0]/g, '_') || `event ${index + 1}`;
+    let key = label;
+    let suffix = 2;
+    while (usedKeys.has(key)) {
+      key = `${label} (${suffix})`;
+      suffix += 1;
+    }
+    usedKeys.add(key);
+    keyedEvents.push([key, event]);
+  }
+  return Object.fromEntries(keyedEvents);
 }
 
 function getTeamData(payload) {
@@ -247,7 +277,7 @@ export function createGameController({
         teamName: team.name,
         players: playerData,
         boxScore,
-        events: request.body.events || [],
+        events: eventsByAction(request.body.events || []),
       },
       metadata: request.body.metadata || {},
       media: {
