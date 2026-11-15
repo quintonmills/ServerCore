@@ -285,35 +285,56 @@ export function createGameController({
           ...graphic,
         };
       }));
-      generated.push(
-        ...generationResults
-          .filter((result) => result.status === 'fulfilled')
-          .map((result) => result.value),
-      );
-      const failedGeneration = generationResults.find((result) => result.status === 'rejected');
-      if (failedGeneration) throw failedGeneration.reason;
-
-      if (generated.length > 0) {
-        finalizedGame = await GameModel.findOneAndUpdate(
-          { idempotencyKey: gamePayload.idempotencyKey },
-          {
-            $push: {
-              'media.generatedMedia': {
-                $each: generated.map((graphic) => ({
-                  type: 'flyer',
-                  playerId: graphic.playerId,
-                  publicUrl: graphic.publicUrl,
-                  downloadUrl: graphic.downloadUrl,
-                })),
-              },
-            },
-          },
-          { new: true, runValidators: true },
-        );
-        if (!finalizedGame) throw new Error('The finalized game could not be updated with generated media');
+      const warnings = [];
+      for (const result of generationResults) {
+        if (result.status === 'fulfilled') {
+          generated.push(result.value);
+        } else {
+          logger.error(
+            { err: serializeError(result.reason), requestId: request.id },
+            'Failed to generate a game flyer',
+          );
+          warnings.push('The game was saved, but one or more flyer graphics could not be generated.');
+        }
       }
 
-      response.status(200).json({ game: omitStoredImages(finalizedGame), graphics: generated });
+      if (generated.length > 0) {
+        try {
+          const updatedGame = await GameModel.findOneAndUpdate(
+            { idempotencyKey: gamePayload.idempotencyKey },
+            {
+              $push: {
+                'media.generatedMedia': {
+                  $each: generated.map((graphic) => ({
+                    type: 'flyer',
+                    playerId: graphic.playerId,
+                    publicUrl: graphic.publicUrl,
+                    downloadUrl: graphic.downloadUrl,
+                  })),
+                },
+              },
+            },
+            { new: true, runValidators: true },
+          );
+          if (updatedGame) {
+            finalizedGame = updatedGame;
+          } else {
+            throw new Error('The finalized game could not be updated with generated media');
+          }
+        } catch (error) {
+          logger.error(
+            { err: serializeError(error), requestId: request.id },
+            'Failed to save generated flyer links',
+          );
+          warnings.push('The game was saved, but flyer links could not be recorded.');
+        }
+      }
+
+      response.status(200).json({
+        game: omitStoredImages(finalizedGame),
+        graphics: generated,
+        ...(warnings.length > 0 ? { warnings: [...new Set(warnings)] } : {}),
+      });
     } catch (error) {
       const cleanupResults = await Promise.allSettled(
         generated.map((graphic) => unlink(graphic.filePath)),

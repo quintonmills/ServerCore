@@ -505,7 +505,7 @@ test('rejects an invalid raster asset with a clear JSON error before persistence
   });
 });
 
-test('returns a clear gateway error when image generation fails', async () => {
+test('returns a successful game save with a warning when flyer generation fails', async () => {
   const impressivePayload = {
     ...payload,
     players: [{ ...payload.players[0], pts: 18 }],
@@ -513,7 +513,7 @@ test('returns a clear gateway error when image generation fails', async () => {
   const app = createTestApp({
     GameModel: {
       async findOneAndUpdate(_filter, update) {
-        return update.$set;
+        return applyGameUpdate(undefined, update);
       },
     },
     flyerGenerator: async () => {
@@ -529,11 +529,44 @@ test('returns a clear gateway error when image generation fails', async () => {
     });
     const body = await response.json();
 
-    assert.equal(response.status, 502);
-    assert.deepEqual(body.error, {
-      code: 'IMAGE_GENERATION_FAILED',
-      message: 'The image-generation service could not create a valid flyer image.',
+    assert.equal(response.status, 200);
+    assert.equal(body.game.status, 'COMPLETED');
+    assert.deepEqual(body.graphics, []);
+    assert.deepEqual(body.warnings, [
+      'The game was saved, but one or more flyer graphics could not be generated.',
+    ]);
+  });
+});
+
+test('keeps game submission successful when flyer links cannot be recorded', async () => {
+  const app = createTestApp({
+    GameModel: {
+      async findOneAndUpdate(_filter, update) {
+        if (update.$push) throw new Error('Generated-media update failed');
+        return applyGameUpdate(undefined, update);
+      },
+    },
+    flyerGenerator: async () => ({
+      filePath: '/tmp/generated-flyer.jpg',
+      publicUrl: 'https://scorekings-api.example.com/output/generated-flyer.jpg',
+      downloadUrl: 'https://scorekings-api.example.com/api/games/flyers/generated-flyer.jpg/download',
+    }),
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/games/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...payload, players: [{ ...payload.players[0], pts: 18 }] }),
     });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.game.status, 'COMPLETED');
+    assert.equal(body.graphics.length, 1);
+    assert.deepEqual(body.warnings, [
+      'The game was saved, but flyer links could not be recorded.',
+    ]);
   });
 });
 
@@ -572,7 +605,7 @@ test('persists games without an eligible flyer scorer', async () => {
   });
 });
 
-test('rendering failure returns an error and does not report a generated graphic', async () => {
+test('rendering failure does not turn a successfully saved game into an error', async () => {
   const impressivePayload = {
     ...payload,
     players: [{ ...payload.players[0], pts: 18 }],
@@ -601,8 +634,12 @@ test('rendering failure returns an error and does not report a generated graphic
     });
     const body = await response.json();
 
-    assert.equal(response.status, 500);
-    assert.equal(body.error.code, 'INTERNAL_SERVER_ERROR');
+    assert.equal(response.status, 200);
+    assert.equal(body.game.gameData.boxScore[0].PTS, 18);
+    assert.deepEqual(body.graphics, []);
+    assert.deepEqual(body.warnings, [
+      'The game was saved, but one or more flyer graphics could not be generated.',
+    ]);
     assert.equal(renderCalls, 1);
     assert.equal(savedPayload.gameData.boxScore[0].PTS, 18);
   });
