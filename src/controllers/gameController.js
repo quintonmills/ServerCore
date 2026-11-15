@@ -266,8 +266,25 @@ export function createGameController({
 
       let finalizedGame = await saveFinalizedGame(GameModel, gamePayload);
       if (!finalizedGame) throw new Error('The finalized game could not be saved');
-      await updateTeams(TeamModel, request.body);
-      await updateCareerStats(PlayerModel, boxScore);
+      const warnings = [];
+      try {
+        await updateTeams(TeamModel, request.body);
+      } catch (error) {
+        logger.error(
+          { err: serializeError(error), requestId: request.id },
+          'Failed to update team records after saving a game',
+        );
+        warnings.push('The game was saved, but team records could not be updated.');
+      }
+      try {
+        await updateCareerStats(PlayerModel, boxScore);
+      } catch (error) {
+        logger.error(
+          { err: serializeError(error), requestId: request.id },
+          'Failed to update player career stats after saving a game',
+        );
+        warnings.push('The game was saved, but player career stats could not be updated.');
+      }
 
       const generationResults = await Promise.allSettled(players.map(async (player) => {
         const input = playerInputs.get(player.id);
@@ -285,7 +302,6 @@ export function createGameController({
           ...graphic,
         };
       }));
-      const warnings = [];
       for (const result of generationResults) {
         if (result.status === 'fulfilled') {
           generated.push(result.value);
