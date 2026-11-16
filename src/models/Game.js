@@ -17,38 +17,6 @@ const mediaTeamSchema = new mongoose.Schema(
   { _id: false },
 );
 
-const boxScoreSchema = new mongoose.Schema(
-  {
-    playerId: { type: String, required: true, maxlength: 100 },
-    firstName: { type: String, maxlength: 100 },
-    lastName: { type: String, maxlength: 100 },
-    name: { type: String, maxlength: 200 },
-    jersey: { type: String, maxlength: 10 },
-    teamId: { type: String, maxlength: 100 },
-    PTS: { type: Number, min: 0, default: 0 },
-    REB: { type: Number, min: 0, default: 0 },
-    AST: { type: Number, min: 0, default: 0 },
-    STL: { type: Number, min: 0, default: 0 },
-    BLK: { type: Number, min: 0, default: 0 },
-    TOV: { type: Number, min: 0, default: 0 },
-    MIN: { type: Number, min: 0 },
-    FG: { type: Number, min: 0 },
-    FGA: { type: Number, min: 0 },
-    FG3: { type: Number, min: 0 },
-    FG3A: { type: Number, min: 0 },
-    FT: { type: Number, min: 0 },
-    FTA: { type: Number, min: 0 },
-    OREB: { type: Number, min: 0 },
-    DREB: { type: Number, min: 0 },
-    PF: { type: Number, min: 0 },
-    PLUS_MINUS: { type: Number },
-    FGM: { type: Number, min: 0 },
-    FG3M: { type: Number, min: 0 },
-    FTM: { type: Number, min: 0 },
-  },
-  { _id: false, strict: false },
-);
-
 const playByPlayEventSchema = new mongoose.Schema(
   {
     period: { type: mongoose.Schema.Types.Mixed },
@@ -106,7 +74,6 @@ const gameSchema = new mongoose.Schema(
     gameData: {
       teamName: { type: String, required: true, maxlength: 200 },
       players: { type: mongoose.Schema.Types.Mixed, required: true },
-      boxScore: { type: [boxScoreSchema], default: [] },
       events: { type: Map, of: playByPlayEventSchema, default: () => new Map() },
     },
     media: {

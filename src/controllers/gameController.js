@@ -109,6 +109,7 @@ async function saveFinalizedGame(GameModel, payload) {
     $unset: {
       'media.teamA': '',
       'media.teamB': '',
+      'gameData.boxScore': '',
     },
     $setOnInsert: {
       gameId,
@@ -117,10 +118,17 @@ async function saveFinalizedGame(GameModel, payload) {
     },
   };
   try {
+    // Keep the removed boxScore path in $unset so existing game records are migrated.
     return await GameModel.findOneAndUpdate(
       { idempotencyKey: payload.idempotencyKey },
       update,
-      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+        strict: false,
+      },
     );
   } catch (error) {
     if (!isDuplicateKeyError(error)) throw error;
@@ -128,34 +136,44 @@ async function saveFinalizedGame(GameModel, payload) {
     const finalizedGame = await GameModel.findOneAndUpdate(
       { idempotencyKey: payload.idempotencyKey },
       { $set, $unset: update.$unset },
-      { new: true, runValidators: true },
+      { new: true, runValidators: true, strict: false },
     );
     if (!finalizedGame) throw error;
     return finalizedGame;
   }
 }
 
-function getCanonicalBoxScore(payload) {
-  const source = payload.boxScore || payload.players;
-  return source.map((player) => {
-    const playerId = player.playerId || player.id;
-    const legacyPlayer = payload.players.find((entry) => (entry.playerId || entry.id) === playerId);
-    const team = getTeamData(payload);
-    const [fallbackFirstName, ...fallbackLastName] = (player.name || legacyPlayer?.name || '').split(' ');
+function getCanonicalPlayers(payload) {
+  const team = getTeamData(payload);
+  const playerInputs = new Map(payload.players.map((player) => [player.id, player]));
+  const scoreEntries = new Map(
+    (payload.boxScore || []).map((player) => [player.playerId || player.id, player]),
+  );
+  const playerIds = [...new Set([...playerInputs.keys(), ...scoreEntries.keys()])];
+
+  return playerIds.map((playerId) => {
+    const playerInput = playerInputs.get(playerId) || {};
+    const scoreEntry = scoreEntries.get(playerId) || {};
+    const player = { ...playerInput, ...scoreEntry };
+    const [fallbackFirstName, ...fallbackLastName] = (scoreEntry.name || playerInput.name || '').split(' ');
+    const firstName = player.firstName || fallbackFirstName || playerId;
+    const lastName = player.lastName || fallbackLastName.join(' ');
     return {
-      playerId,
-      firstName: player.firstName || legacyPlayer?.firstName || fallbackFirstName || playerId,
-      lastName: player.lastName || legacyPlayer?.lastName || fallbackLastName.join(' '),
-      name: player.name || legacyPlayer?.name,
-      jersey: player.jersey || legacyPlayer?.jersey,
-      teamId: player.teamId || legacyPlayer?.teamId || team.teamId,
+      id: playerId,
+      ...(playerInput.team ? { team: playerInput.team } : {}),
+      firstName,
+      lastName,
+      name: playerInput.name || scoreEntry.name || [firstName, lastName].filter(Boolean).join(' '),
+      ...(player.jersey ? { jersey: player.jersey } : {}),
+      ...(player.teamId || team.teamId ? { teamId: player.teamId || team.teamId } : {}),
+      ...(playerInput.topPerformer !== undefined ? { topPerformer: playerInput.topPerformer } : {}),
       ...normalizePlayerStats(player),
     };
   });
 }
 
-async function updateCareerStats(PlayerModel, boxScore) {
-  for (const player of boxScore) {
+async function updateCareerStats(PlayerModel, players) {
+  for (const player of players) {
     const stats = normalizePlayerStats(player);
     const increment = {
       'careerStats.pts': stats.PTS,
@@ -167,7 +185,7 @@ async function updateCareerStats(PlayerModel, boxScore) {
       'careerStats.gamesPlayed': 1,
     };
     await PlayerModel.findOneAndUpdate(
-      { playerId: player.playerId },
+      { playerId: player.id },
       {
         $set: {
           firstName: player.firstName,
@@ -175,7 +193,7 @@ async function updateCareerStats(PlayerModel, boxScore) {
           ...(player.jersey ? { jersey: player.jersey } : {}),
           ...(player.teamId ? { teamId: player.teamId } : {}),
         },
-        $setOnInsert: { playerId: player.playerId },
+        $setOnInsert: { playerId: player.id },
         $inc: increment,
       },
       { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
@@ -230,12 +248,12 @@ export function createGameController({
       size: suppliedImageGeneration.size || '1024x1536',
       quality: suppliedImageGeneration.quality || 'high',
     };
-    const boxScore = getCanonicalBoxScore(request.body);
+    const canonicalPlayers = getCanonicalPlayers(request.body);
     const now = new Date();
     const gameTimestamp = request.body.startedAt || request.body.completedAt || now;
     const status = (request.body.status || 'COMPLETED').toUpperCase();
     const playerData = playersByName(
-      request.body.players.map(({ photo, photos, ...player }) => player),
+      canonicalPlayers.map(({ firstName, lastName, ...player }) => player),
     );
     const gamePayload = {
       gameId: readableGameId(request.body.location, gameTimestamp),
@@ -253,7 +271,6 @@ export function createGameController({
       gameData: {
         teamName: team.name,
         players: playerData,
-        boxScore,
         events: eventsByAction(request.body.events || []),
       },
       metadata: request.body.metadata || {},
@@ -301,7 +318,7 @@ export function createGameController({
         warnings.push('The game was saved, but team records could not be updated.');
       }
       try {
-        await updateCareerStats(PlayerModel, boxScore);
+        await updateCareerStats(PlayerModel, canonicalPlayers);
       } catch (error) {
         logger.error(
           { err: serializeError(error), requestId: request.id },

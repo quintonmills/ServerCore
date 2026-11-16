@@ -15,33 +15,31 @@ test('game schema stores reference images and image-generation settings', () => 
     gameData: {
       teamName: 'Red Team',
       players: {
-      Marcus: {
-        id: 'p1',
-        firstName: 'Marcus',
-        lastName: 'Example',
-        teamId: 'red-team',
-        team: 'Team A',
-        jersey: '3',
-        name: 'Marcus',
-        pts: 14,
-        reb: 5,
-        ast: 3,
-        stl: 1,
-        blk: 0,
-        to: 2,
-      },
-      Jordan: {
-        id: 'p2',
-        team: 'Team B',
-        jersey: '4',
-        name: 'Jordan',
-        pts: 0,
-        reb: 0,
-        ast: 0,
-        stl: 0,
-        blk: 0,
-        to: 0,
-      },
+        Marcus: {
+          id: 'p1',
+          teamId: 'red-team',
+          team: 'Team A',
+          jersey: '3',
+          name: 'Marcus',
+          PTS: 14,
+          REB: 5,
+          AST: 3,
+          STL: 1,
+          BLK: 0,
+          TOV: 2,
+        },
+        Jordan: {
+          id: 'p2',
+          team: 'Team B',
+          jersey: '4',
+          name: 'Jordan',
+          PTS: 0,
+          REB: 0,
+          AST: 0,
+          STL: 0,
+          BLK: 0,
+          TOV: 0,
+        },
       },
     },
     media: {
@@ -65,15 +63,16 @@ test('game schema stores reference images and image-generation settings', () => 
   assert.equal(game.validateSync(), undefined);
   assert.equal(game.media.team.logo, 'data:image/png;base64,aGVsbG8=');
   assert.equal(game.media.players[0].photos.length, 3);
-  assert.equal(game.gameData.players.Marcus.firstName, 'Marcus');
-  assert.equal(game.gameData.players.Marcus.lastName, 'Example');
+  assert.equal(game.gameData.players.Marcus.firstName, undefined);
+  assert.equal(game.gameData.players.Marcus.lastName, undefined);
+  assert.equal(game.gameData.players.Marcus.PTS, 14);
   assert.equal(game.gameData.players.Marcus.teamId, 'red-team');
   assert.equal(game.media.players.length, 1);
   assert.equal(game.media.imageGeneration.prompt, 'Arena spotlight');
   assert.equal(game.createdAt, undefined);
   assert.equal(Game.schema.path('gameData.players').instance, 'Mixed');
   assert.equal(Game.schema.path('gameData.events').instance, 'Map');
-  assert.equal(Game.schema.path('gameData.boxScore').instance, 'Array');
+  assert.equal(Game.schema.path('gameData.boxScore'), undefined);
   assert.equal(Game.schema.path('timestamps.startedAt').instance, 'Date');
   assert.equal(Game.schema.path('generatedMedia'), undefined);
 });
@@ -100,7 +99,7 @@ test('game schema stores an optional idempotency key', () => {
   ), false);
 });
 
-test('game schema stores a team name, box scores, play-by-play events, and generated media', () => {
+test('game schema stores player stats, play-by-play events, and generated media', () => {
   const game = new Game({
     gameId: 'game-102',
     location: 'ScoreKings Arena',
@@ -112,27 +111,29 @@ test('game schema stores a team name, box scores, play-by-play events, and gener
     },
     gameData: {
       teamName: 'Red Team',
-      players: [],
-      boxScore: [{
-        playerId: 'player-1',
-        PTS: 14,
-        REB: 5,
-        AST: 3,
-        STL: 1,
-        BLK: 2,
-        TOV: 1,
-        MIN: 32,
-        FG: 6,
-        FGA: 12,
-        FG3: 2,
-        FG3A: 5,
-        FT: 2,
-        FTA: 3,
-        OREB: 1,
-        DREB: 4,
-        PF: 2,
-        PLUS_MINUS: -3,
-      }],
+      players: {
+        Marcus: {
+          id: 'player-1',
+          jersey: '3',
+          PTS: 14,
+          REB: 5,
+          AST: 3,
+          STL: 1,
+          BLK: 2,
+          TOV: 1,
+          MIN: 32,
+          FG: 6,
+          FGA: 12,
+          FG3: 2,
+          FG3A: 5,
+          FT: 2,
+          FTA: 3,
+          OREB: 1,
+          DREB: 4,
+          PF: 2,
+          PLUS_MINUS: -3,
+        },
+      },
       events: { shot_made: { type: 'shot_made', period: 1, points: 2 } },
     },
     media: {
@@ -172,9 +173,9 @@ test('game schema stores a team name, box scores, play-by-play events, and gener
   });
 
   assert.equal(game.validateSync(), undefined);
-  assert.equal(game.gameData.boxScore[0].PTS, 14);
-  assert.equal(game.gameData.boxScore[0].PLUS_MINUS, -3);
-  assert.equal(game.gameData.boxScore[0].FG3A, 5);
+  assert.equal(game.gameData.players.Marcus.PTS, 14);
+  assert.equal(game.gameData.players.Marcus.PLUS_MINUS, -3);
+  assert.equal(game.gameData.players.Marcus.FG3A, 5);
   assert.equal(game.gameData.events.get('shot_made').type, 'shot_made');
   assert.equal(game.media.generatedMedia[0].downloadUrl, 'https://api.example.com/flyer/download');
   assert.equal(game.gameData.teamName, 'Red Team');

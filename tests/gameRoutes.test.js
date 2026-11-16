@@ -157,6 +157,7 @@ test('finalize stores a readable game ID and returns generated graphics', async 
       assert.deepEqual(update.$unset, {
         'media.teamA': '',
         'media.teamB': '',
+        'gameData.boxScore': '',
       });
       assert.deepEqual(filter, { idempotencyKey: 'finalize-request-101' });
       assert.deepEqual(options, {
@@ -164,6 +165,7 @@ test('finalize stores a readable game ID and returns generated graphics', async 
         upsert: true,
         runValidators: true,
         setDefaultsOnInsert: true,
+        strict: false,
       });
       savedGame = applyGameUpdate(undefined, update);
       savedGame._id = 'mongo-game-id';
@@ -211,7 +213,7 @@ test('finalize stores a readable game ID and returns generated graphics', async 
       assert.equal(body.game._id, 'mongo-game-id');
       assert.equal(body.game.gameData.events.length, 2);
       assert.deepEqual(body.game.gameData.events.map((event) => event.action), ['PTS_2', 'PTS_2']);
-      assert.equal(body.game.gameData.boxScore.length, 3);
+      assert.equal(body.game.gameData.boxScore, undefined);
       assert.equal(body.game.media.generatedMedia[0].publicUrl, body.graphics[0].publicUrl);
       assert.equal(body.graphics.length, 3);
       assert.deepEqual(renderedPlayers, ['p2', 'p3', 'p1']);
@@ -228,18 +230,28 @@ test('finalize stores a readable game ID and returns generated graphics', async 
       assert.match(savedGame.gameId, /^marietta-rec-league-/);
       assert.equal(savedPayload.idempotencyKey, 'finalize-request-101');
       assert.equal(savedPayload.status, 'COMPLETED');
-      assert.equal(savedPayload.gameData.boxScore[0].PTS, 14);
+      assert.equal(savedPayload.gameData.players.Marcus.PTS, 14);
+      assert.equal(savedPayload.gameData.players.Marcus.REB, 5);
+      assert.equal(savedPayload.gameData.players.Marcus.jersey, '3');
+      assert.equal(savedPayload.gameData.players.Marcus.firstName, undefined);
+      assert.equal(savedPayload.gameData.players.Marcus.lastName, undefined);
+      assert.equal(savedPayload.gameData.players['Marcus (2)'].REB, 8);
       assert.deepEqual(Object.keys(savedPayload.gameData.players), ['Marcus', 'Alex', 'Marcus (2)']);
       assert.deepEqual(body.game.gameData.players.map((player) => player.name), [
         'Marcus',
         'Alex',
         'Marcus',
       ]);
+      assert.equal(body.game.gameData.players[0].jersey, '3');
+      assert.equal(body.game.gameData.players[0].PTS, 14);
+      assert.equal(body.game.gameData.players[0].firstName, undefined);
+      assert.equal(body.game.gameData.players[0].lastName, undefined);
       assert.deepEqual(Object.keys(savedPayload.gameData.events), ['PTS_2', 'PTS_2 (2)']);
       assert.equal(savedPayload.gameData.events.PTS_2.action, 'PTS_2');
       assert.equal(savedPayload.gameData.events.PTS_2.resultingScore.teamA, 2);
       assert.equal(statUpdates.length, 3);
       assert.deepEqual(statUpdates[0].filter, { playerId: 'p1' });
+      assert.equal(statUpdates[0].update.$setOnInsert.playerId, 'p1');
       assert.equal(statUpdates[0].update.$inc['careerStats.pts'], 14);
       assert.equal(statUpdates[0].update.$inc['careerStats.gamesPlayed'], 1);
       assert.equal(savedPayload.metadata.verifiedForLicensing, true);
@@ -247,7 +259,6 @@ test('finalize stores a readable game ID and returns generated graphics', async 
       assert.equal(teamUpdates.length, 1);
       assert.equal(savedPayload.gameData.teamName, 'Red Team');
       assert.deepEqual(Object.keys(savedPayload.gameData).sort(), [
-        'boxScore',
         'events',
         'players',
         'teamName',
@@ -332,7 +343,8 @@ test('finalize evaluates and generates a five-player graphic pack concurrently',
 
     assert.equal(response.status, 200);
     assert.deepEqual(body.graphics.map((graphic) => graphic.playerId), ['p5', 'p4', 'p3', 'p2', 'p1']);
-    assert.equal(body.game.gameData.boxScore.length, 5);
+    assert.equal(body.game.gameData.boxScore, undefined);
+    assert.equal(body.game.gameData.players[0].PTS, 18);
     assert.equal(body.game.media.generatedMedia.length, 5);
     assert.equal(statUpdates.length, 5);
     assert.equal(maxActiveGenerations, 5);
@@ -413,8 +425,8 @@ test('persists game history when optional flyer photos or team logos are not sup
     assert.equal(savedPayload.idempotencyKey, 'game-101');
     assert.equal(savedPayload['timestamps.startedAt'], incompletePayload.startedAt);
     assert.equal(savedPayload['timestamps.completedAt'], incompletePayload.completedAt);
-    assert.equal(savedPayload['gameData'].boxScore[0].playerId, 'p1');
-    assert.equal(savedPayload['gameData'].boxScore[0].PTS, 14);
+    assert.equal(savedPayload.gameData.players.Marcus.id, 'p1');
+    assert.equal(savedPayload.gameData.players.Marcus.PTS, 14);
     assert.deepEqual(Object.keys(savedPayload.gameData.events), ['PTS_2']);
     assert.deepEqual(savedPayload.metadata, { testMode: false, verifiedForLicensing: true });
   });
@@ -430,6 +442,7 @@ test('uses the game ID as a stable fallback key and keeps distinct games in sepa
           upsert: true,
           runValidators: true,
           setDefaultsOnInsert: true,
+          strict: false,
         });
         const key = filter.idempotencyKey;
         const savedGame = applyGameUpdate(savedGames.get(key), update);
@@ -740,13 +753,13 @@ test('rendering failure does not turn a successfully saved game into an error', 
     const body = await response.json();
 
     assert.equal(response.status, 200);
-    assert.equal(body.game.gameData.boxScore[0].PTS, 18);
+    assert.equal(body.game.gameData.players[0].PTS, 18);
     assert.deepEqual(body.graphics, []);
     assert.deepEqual(body.warnings, [
       'The game was saved, but one or more flyer graphics could not be generated.',
     ]);
     assert.equal(renderCalls, 1);
-    assert.equal(savedPayload.gameData.boxScore[0].PTS, 18);
+    assert.equal(savedPayload.gameData.players.Marcus.PTS, 18);
   });
 });
 
