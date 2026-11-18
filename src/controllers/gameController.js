@@ -1,212 +1,74 @@
 import { unlink } from 'node:fs/promises';
-import { normalizePlayerStats } from '../utils/playerStats.js';
-import { selectPlayersForCards } from '../services/selectPlayersForCards.js';
 import { validateRasterImageDataUrl } from '../utils/rasterImage.js';
 import { validateGamePayload } from '../utils/validateGamePayload.js';
-import { eventsByAction } from '../utils/eventsByAction.js';
 import logger, { serializeError } from '../logger.js';
+import { createGamePayload, getPlayerImages } from '../services/gamePayload.js';
+import {
+  omitStoredImages,
+  saveFinalizedGame,
+  saveGeneratedMedia,
+  updateCareerStats,
+  updateTeams,
+} from '../services/gamePersistence.js';
 
-function isDuplicateKeyError(error) {
-  return error?.code === 11000;
+function logWarning(error, requestId, message) {
+  logger.error({ err: serializeError(error), requestId }, message);
 }
 
-function omitStoredImages(game) {
-  const safeGame = typeof game.toObject === 'function' ? game.toObject() : { ...game };
-  if (safeGame.gameData?.players && !Array.isArray(safeGame.gameData.players)) {
-    const players = safeGame.gameData.players instanceof Map
-      ? [...safeGame.gameData.players.values()]
-      : Object.values(safeGame.gameData.players);
-    safeGame.gameData = { ...safeGame.gameData, players };
-  }
-  if (safeGame.gameData?.events && !Array.isArray(safeGame.gameData.events)) {
-    const events = safeGame.gameData.events instanceof Map
-      ? [...safeGame.gameData.events.values()]
-      : Object.values(safeGame.gameData.events);
-    safeGame.gameData = { ...safeGame.gameData, events };
-  }
-  if (!safeGame.media || typeof safeGame.media !== 'object') return safeGame;
+async function validateFlyerImages(players, playerInputs, team) {
+  await Promise.all(
+    players.flatMap((player) => {
+      const input = playerInputs.get(player.id);
+      return [
+        ...getPlayerImages(input).map((image, index) =>
+          validateRasterImageDataUrl(image, `Player ${player.id} photo ${index + 1}`),
+        ),
+        ...(team.logo ? [validateRasterImageDataUrl(team.logo, 'teamLogo')] : []),
+      ];
+    }),
+  );
+}
 
-  safeGame.media = { ...safeGame.media };
-  if (safeGame.media.team) {
-    safeGame.media.team = { ...safeGame.media.team };
-    delete safeGame.media.team.logo;
-  }
-  if (Array.isArray(safeGame.media.players)) {
-    safeGame.media.players = safeGame.media.players.map((player) => ({ ...player }));
-    safeGame.media.players.forEach((player) => {
-      delete player.photo;
-      delete player.photos;
+async function generatePlayerGraphics({
+  generateFlyer,
+  players,
+  playerInputs,
+  finalizedGame,
+  team,
+  imageGeneration,
+  publicBaseUrl,
+  requestId,
+}) {
+  return Promise.allSettled(players.map(async (player) => {
+    const input = playerInputs.get(player.id);
+    const graphic = await generateFlyer(player, finalizedGame, {
+      publicBaseUrl,
+      playerImages: getPlayerImages(input),
+      teamLogoImage: team.logo,
+      imageGeneration,
+      requestId,
     });
-  }
-  return safeGame;
+    return {
+      playerId: player.id,
+      playerName: player.name,
+      ...graphic,
+    };
+  }));
 }
 
-function readableGameId(location, timestamp) {
-  const locationPart = location
-    .trim()
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48)
-    .toLowerCase() || 'game';
-  const timestampPart = new Date(timestamp)
-    .toISOString()
-    .replace(/[-:.]/g, '')
-    .replace('T', '-');
-  return `${locationPart}-${timestampPart}`;
-}
-
-function getPlayerImages(input) {
-  return input.photos || (input.photo ? [input.photo] : []);
-}
-
-function playersByName(players) {
-  const keyedPlayers = [];
-  const usedKeys = new Set();
-  for (const player of players) {
-    const name = player.name.trim().replace(/[.$\0]/g, '_') || player.id;
-    let key = name;
-    let suffix = 2;
-    while (usedKeys.has(key)) {
-      key = `${name} (${suffix})`;
-      suffix += 1;
+async function cleanupGeneratedGraphics(generated, requestId) {
+  const cleanupResults = await Promise.allSettled(
+    generated.map((graphic) => unlink(graphic.filePath)),
+  );
+  cleanupResults.forEach((result) => {
+    if (result.status === 'rejected') {
+      logWarning(
+        result.reason,
+        requestId,
+        'Failed to remove a generated graphic after request failure',
+      );
     }
-    usedKeys.add(key);
-    keyedPlayers.push([key, player]);
-  }
-  return Object.fromEntries(keyedPlayers);
-}
-
-function getTeamData(payload) {
-  if (payload.teamName !== undefined) {
-    return {
-      teamId: payload.teamId,
-      name: payload.teamName,
-      logo: payload.teamLogo,
-      logoUrl: payload.teamLogoUrl,
-    };
-  }
-  return payload.teams?.home || payload.teamA;
-}
-
-async function saveFinalizedGame(GameModel, payload) {
-  const { gameId, timestamps, ...setPayload } = payload;
-  const { media, ...gameFields } = setPayload;
-  const $set = {
-    ...gameFields,
-    'timestamps.updatedAt': timestamps.updatedAt,
-    'media.team': media.team,
-    'media.players': media.players,
-    'media.imageGeneration': media.imageGeneration,
-  };
-  if (timestamps.startedAt !== undefined) {
-    $set['timestamps.startedAt'] = timestamps.startedAt;
-  }
-  if (timestamps.completedAt !== undefined) {
-    $set['timestamps.completedAt'] = timestamps.completedAt;
-  }
-  const update = {
-    $set,
-    $unset: {
-      'media.teamA': '',
-      'media.teamB': '',
-    },
-    $setOnInsert: {
-      gameId,
-      'timestamps.createdAt': timestamps.createdAt,
-      'media.generatedMedia': media.generatedMedia,
-    },
-  };
-  try {
-    return await GameModel.findOneAndUpdate(
-      { idempotencyKey: payload.idempotencyKey },
-      update,
-      {
-        new: true,
-        upsert: true,
-        runValidators: true,
-        setDefaultsOnInsert: true,
-        strict: false,
-      },
-    );
-  } catch (error) {
-    if (!isDuplicateKeyError(error)) throw error;
-
-    const finalizedGame = await GameModel.findOneAndUpdate(
-      { idempotencyKey: payload.idempotencyKey },
-      { $set, $unset: update.$unset },
-      { new: true, runValidators: true, strict: false },
-    );
-    if (!finalizedGame) throw error;
-    return finalizedGame;
-  }
-}
-
-function getCanonicalPlayers(payload) {
-  const team = getTeamData(payload);
-  const playerInputs = new Map(payload.players.map((player) => [player.id, player]));
-  const scoreEntries = new Map(
-    (payload.boxScore || []).map((player) => [player.playerId || player.id, player]),
-  );
-  const playerIds = [...new Set([...playerInputs.keys(), ...scoreEntries.keys()])];
-
-  return playerIds.map((playerId) => {
-    const playerInput = playerInputs.get(playerId) || {};
-    const scoreEntry = scoreEntries.get(playerId) || {};
-    const player = { ...playerInput, ...scoreEntry };
-    const [fallbackFirstName, ...fallbackLastName] = (scoreEntry.name || playerInput.name || '').split(' ');
-    const firstName = player.firstName || fallbackFirstName || playerId;
-    const lastName = player.lastName || fallbackLastName.join(' ');
-    return {
-      id: playerId,
-      ...(playerInput.team ? { team: playerInput.team } : {}),
-      firstName,
-      lastName,
-      name: playerInput.name || scoreEntry.name || [firstName, lastName].filter(Boolean).join(' '),
-      ...(player.jersey ? { jersey: player.jersey } : {}),
-      ...(player.teamId || team.teamId ? { teamId: player.teamId || team.teamId } : {}),
-      ...(playerInput.topPerformer !== undefined ? { topPerformer: playerInput.topPerformer } : {}),
-      ...normalizePlayerStats(player),
-    };
   });
-}
-
-async function updateCareerStats(PlayerModel, players) {
-  for (const player of players) {
-    const stats = normalizePlayerStats(player);
-    const increment = {
-      'careerStats.pts': stats.PTS,
-      'careerStats.reb': stats.REB,
-      'careerStats.ast': stats.AST,
-      'careerStats.stl': stats.STL,
-      'careerStats.blk': stats.BLK,
-      'careerStats.to': stats.TOV,
-      'careerStats.gamesPlayed': 1,
-    };
-    await PlayerModel.findOneAndUpdate(
-      { playerId: player.id },
-      {
-        $set: {
-          firstName: player.firstName,
-          lastName: player.lastName,
-          ...(player.jersey ? { jersey: player.jersey } : {}),
-          ...(player.teamId ? { teamId: player.teamId } : {}),
-        },
-        $setOnInsert: { playerId: player.id },
-        $inc: increment,
-      },
-      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
-    );
-  }
-}
-
-async function updateTeams(TeamModel, payload) {
-  const team = getTeamData(payload);
-  if (!team.teamId) return;
-  await TeamModel.findOneAndUpdate(
-    { teamId: team.teamId },
-    { $set: { name: team.name, ...(team.logoUrl ? { logoUrl: team.logoUrl } : {}) } },
-    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
-  );
 }
 
 export function createGameController({
@@ -230,145 +92,60 @@ export function createGameController({
       return;
     }
 
-    const selectedPlayers = selectPlayersForCards(request.body.players);
-
-    const playerInputs = new Map(request.body.players.map((player) => [player.id, player]));
-    const team = getTeamData(request.body);
-    const players = selectedPlayers.filter((player) => {
-      const input = playerInputs.get(player.id);
-      const imageCount = getPlayerImages(input).length;
-      return (imageCount === 1 || imageCount === 2 || imageCount === 3) && Boolean(team.logo);
-    });
-
-    const suppliedImageGeneration = request.body.imageGeneration || {};
-    const imageGeneration = {
-      ...suppliedImageGeneration,
-      size: suppliedImageGeneration.size || '1024x1536',
-      quality: suppliedImageGeneration.quality || 'high',
-    };
-    const canonicalPlayers = getCanonicalPlayers(request.body);
-    const now = new Date();
-    const gameTimestamp = request.body.startedAt || request.body.completedAt || now;
-    const status = (request.body.status || 'COMPLETED').toUpperCase();
-    const playerData = playersByName(
-      canonicalPlayers.map(({ firstName, lastName, ...player }) => player),
-    );
-    const gamePayload = {
-      gameId: readableGameId(request.body.location, gameTimestamp),
-      idempotencyKey: request.body.idempotencyKey ?? request.body.gameId,
-      location: request.body.location,
-      status,
-      timestamps: {
-        ...(request.body.startedAt ? { startedAt: request.body.startedAt } : {}),
-        ...(request.body.completedAt
-          ? { completedAt: request.body.completedAt }
-          : status === 'COMPLETED' ? { completedAt: now } : {}),
-        createdAt: now,
-        updatedAt: now,
-      },
-      gameData: {
-        teamName: team.name,
-        players: playerData,
-        events: eventsByAction(request.body.events || []),
-      },
-      metadata: request.body.metadata || {},
-      media: {
-        team: {
-          ...(team.logo ? { logo: team.logo } : {}),
-          ...(team.logoUrl ? { logoUrl: team.logoUrl } : {}),
-        },
-        players: request.body.players
-          .filter((player) => player.photo || player.photos)
-          .map((player) => ({
-            playerId: player.id,
-            ...(player.photo ? { photo: player.photo } : {}),
-            ...(player.photos ? { photos: player.photos } : {}),
-          })),
-        generatedMedia: [],
-        imageGeneration,
-      },
-    };
-
+    const {
+      gamePayload,
+      canonicalPlayers,
+      imageGeneration,
+      playerInputs,
+      players,
+      team,
+    } = createGamePayload(request.body);
     const generated = [];
+
     try {
-      await Promise.all(
-        players.flatMap((player) => {
-          const input = playerInputs.get(player.id);
-          return [
-            ...getPlayerImages(input).map((image, index) =>
-              validateRasterImageDataUrl(image, `Player ${player.id} photo ${index + 1}`),
-            ),
-            ...(team.logo ? [validateRasterImageDataUrl(team.logo, 'teamLogo')] : []),
-          ];
-        }),
-      );
+      await validateFlyerImages(players, playerInputs, team);
 
       let finalizedGame = await saveFinalizedGame(GameModel, gamePayload);
       if (!finalizedGame) throw new Error('The finalized game could not be saved');
       const warnings = [];
       try {
-        await updateTeams(TeamModel, request.body);
+        await updateTeams(TeamModel, team);
       } catch (error) {
-        logger.error(
-          { err: serializeError(error), requestId: request.id },
-          'Failed to update team records after saving a game',
-        );
+        logWarning(error, request.id, 'Failed to update team records after saving a game');
         warnings.push('The game was saved, but team records could not be updated.');
       }
       try {
         await updateCareerStats(PlayerModel, canonicalPlayers);
       } catch (error) {
-        logger.error(
-          { err: serializeError(error), requestId: request.id },
-          'Failed to update player career stats after saving a game',
-        );
+        logWarning(error, request.id, 'Failed to update player career stats after saving a game');
         warnings.push('The game was saved, but player career stats could not be updated.');
       }
 
-      const generationResults = await Promise.allSettled(players.map(async (player) => {
-        const input = playerInputs.get(player.id);
-        const graphic = await generateFlyer(player, finalizedGame, {
-          publicBaseUrl,
-          playerImages: getPlayerImages(input),
-          teamLogoImage: team.logo,
-          imageGeneration,
-          requestId: request.id,
-        });
-        return {
-          playerId: player.id,
-          playerName: player.name,
-          ...graphic,
-        };
-      }));
+      const generationResults = await generatePlayerGraphics({
+        generateFlyer,
+        players,
+        playerInputs,
+        finalizedGame,
+        team,
+        imageGeneration,
+        publicBaseUrl,
+        requestId: request.id,
+      });
       for (const result of generationResults) {
         if (result.status === 'fulfilled') {
           generated.push(result.value);
         } else {
-          logger.error(
-            { err: serializeError(result.reason), requestId: request.id },
-            'Failed to generate a game flyer',
-          );
+          logWarning(result.reason, request.id, 'Failed to generate a game flyer');
           warnings.push('The game was saved, but one or more flyer graphics could not be generated.');
         }
       }
 
       if (generated.length > 0) {
         try {
-          const updatedGame = await GameModel.findOneAndUpdate(
-            { idempotencyKey: gamePayload.idempotencyKey },
-            {
-              $push: {
-                'media.generatedMedia': {
-                  $each: generated.map((graphic) => ({
-                    type: 'flyer',
-                    playerId: graphic.playerId,
-                    publicUrl: graphic.publicUrl,
-                    downloadUrl: graphic.downloadUrl,
-                  })),
-                },
-              },
-            },
-            { new: true, runValidators: true },
+          const updatedGame = await saveGeneratedMedia(
+            GameModel,
+            gamePayload.idempotencyKey,
+            generated,
           );
           if (updatedGame) {
             finalizedGame = updatedGame;
@@ -376,10 +153,7 @@ export function createGameController({
             throw new Error('The finalized game could not be updated with generated media');
           }
         } catch (error) {
-          logger.error(
-            { err: serializeError(error), requestId: request.id },
-            'Failed to save generated flyer links',
-          );
+          logWarning(error, request.id, 'Failed to save generated flyer links');
           warnings.push('The game was saved, but flyer links could not be recorded.');
         }
       }
@@ -390,17 +164,7 @@ export function createGameController({
         ...(warnings.length > 0 ? { warnings: [...new Set(warnings)] } : {}),
       });
     } catch (error) {
-      const cleanupResults = await Promise.allSettled(
-        generated.map((graphic) => unlink(graphic.filePath)),
-      );
-      cleanupResults.forEach((result) => {
-        if (result.status === 'rejected') {
-          logger.error(
-            { err: serializeError(result.reason), requestId: request.id },
-            'Failed to remove a generated graphic after request failure',
-          );
-        }
-      });
+      await cleanupGeneratedGraphics(generated, request.id);
       next(error);
     }
   };
