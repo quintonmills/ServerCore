@@ -109,7 +109,6 @@ async function saveFinalizedGame(GameModel, payload) {
     $unset: {
       'media.teamA': '',
       'media.teamB': '',
-      'gameData.boxScore': '',
     },
     $setOnInsert: {
       gameId,
@@ -118,7 +117,6 @@ async function saveFinalizedGame(GameModel, payload) {
     },
   };
   try {
-    // Keep the removed boxScore path in $unset so existing game records are migrated.
     return await GameModel.findOneAndUpdate(
       { idempotencyKey: payload.idempotencyKey },
       update,

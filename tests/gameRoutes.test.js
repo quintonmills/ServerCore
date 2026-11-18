@@ -157,7 +157,6 @@ test('finalize stores a readable game ID and returns generated graphics', async 
       assert.deepEqual(update.$unset, {
         'media.teamA': '',
         'media.teamB': '',
-        'gameData.boxScore': '',
       });
       assert.deepEqual(filter, { idempotencyKey: 'finalize-request-101' });
       assert.deepEqual(options, {
